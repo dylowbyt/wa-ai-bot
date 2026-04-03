@@ -1,9 +1,11 @@
-const { installFeature } = require("./installer")
-const res = await handleCommand(text, imageBuffer)
-async function handleCommand(text) {
+async function handleCommand(text, imageBuffer) {
   text = text.toLowerCase()
 
-  // 🔥 DETEKSI MODE
+  // 🔥 kalau ada gambar → pakai vision
+  if (imageBuffer) {
+    return await visionMode(text, imageBuffer)
+  }
+
   if (text.includes("buat fitur") || text.includes("coding")) {
     return await codingMode(text)
   }
@@ -12,11 +14,5 @@ async function handleCommand(text) {
     return await analyzeMode(text)
   }
 
-  if (text.includes("gambar") || text.includes("foto")) {
-    return await imageMode(text)
-  }
-
   return null
 }
-
-module.exports = { handleCommand }
