@@ -1,86 +1,69 @@
-const {
-  default: makeWASocket,
-  useMultiFileAuthState,
-  DisconnectReason,
-  fetchLatestBaileysVersion
-} = require("@whiskeysockets/baileys")
-
-const QRCode = require("qrcode")
+const { default: makeWASocket, useMultiFileAuthState } = require("@whiskeysockets/baileys")
 const fs = require("fs")
-const { handleCommand } = require("./ai/brain")
 
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState("session")
+    const { state, saveCreds } = await useMultiFileAuthState("session")
 
-  const { version } = await fetchLatestBaileysVersion()
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: false
+    })
 
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    printQRInTerminal: false,
-    browser: ["Ubuntu", "Chrome", "20.0.04"] // 🔥 penting
-  })
+    // Simpan session
+    sock.ev.on("creds.update", saveCreds)
 
-  sock.ev.on("creds.update", saveCreds)
-
-  sock.ev.on("connection.update", async (update) => {
-    const { connection, qr, lastDisconnect } = update
-
-    if (qr) {
-      console.log("📱 QR TERDETEKSI")
-
-      const qrImage = await QRCode.toDataURL(qr)
-      console.log(qrImage)
-    }
-
-    if (connection === "open") {
-      console.log("✅ BOT CONNECTED")
-    }
-
-    if (connection === "close") {
-      const reason = lastDisconnect?.error?.output?.statusCode
-      console.log("❌ Disconnect:", reason)
-
-      if (reason !== DisconnectReason.loggedOut) {
-        console.log("🔄 Reconnect 5 detik...")
-        setTimeout(startBot, 5000)
-      } else {
-        console.log("⚠️ Harus scan ulang QR")
-      }
-    }
-  })
-
-  sock.ev.on("messages.upsert", async (msg) => {
-    const m = msg.messages[0]
-    if (!m.message) return
-
-    const text =
-  m.message.conversation ||
-  m.message.extendedTextMessage?.text ||
-  m.message.imageMessage?.caption
-
-    if (!text) return
-
-    const res = await handleCommand(text)
-    if (res) {
-      return sock.sendMessage(m.key.remoteJid, { text: res })
-    }
-
-    const files = fs.readdirSync("./plugins")
-
-    for (let file of files) {
-      const plugin = require(`./plugins/${file}`)
-
-      if (text.startsWith("." + plugin.name)) {
-        try {
-          await plugin.run(sock, m)
-        } catch (e) {
-          console.log("Plugin error:", e.message)
+    // Status koneksi
+    sock.ev.on("connection.update", (update) => {
+        const { connection } = update
+        if (connection === "open") {
+            console.log("✅ Bot Connected to WhatsApp")
+        } else if (connection === "close") {
+            console.log("❌ Connection closed, reconnecting...")
+            startBot()
         }
-      }
-    }
-  })
+    })
+
+    // LISTENER PESAN (INI YANG PENTING)
+    sock.ev.on("messages.upsert", async ({ messages }) => {
+        try {
+            const m = messages[0]
+            if (!m.message) return
+
+            const from = m.key.remoteJid
+
+            // Ambil isi pesan dari semua tipe
+            const msg =
+                m.message.conversation ||
+                m.message.imageMessage?.caption ||
+                m.message.videoMessage?.caption ||
+                m.message.extendedTextMessage?.text
+
+            if (!msg) return
+
+            console.log("📩 Pesan masuk:", msg)
+
+            // ===== TEST RESPON =====
+            if (msg.toLowerCase() === "halo") {
+                await sock.sendMessage(from, { text: "Halo juga 👋" })
+            }
+
+            // ===== FITUR STIKER (DETECT DULU) =====
+            if (msg.startsWith(".stiker")) {
+                if (m.message.imageMessage) {
+                    await sock.sendMessage(from, {
+                        text: "✅ Gambar terdeteksi, stiker siap dibuat"
+                    })
+                } else {
+                    await sock.sendMessage(from, {
+                        text: "❌ Kirim gambar dengan caption .stiker"
+                    })
+                }
+            }
+
+        } catch (err) {
+            console.log("❌ ERROR:", err)
+        }
+    })
 }
 
-// 🔥 delay biar Railway gak crash duluan
-setTimeout(startBot, 3000)
+startBot()
