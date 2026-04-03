@@ -30,7 +30,6 @@ async function handleDownload(sock, from, url) {
       text: "⏳ Processing link..."
     })
 
-    // ===== VALIDASI URL =====
     if (!isValidUrl(url)) {
       return sock.sendMessage(from, {
         text: "❌ Link tidak valid"
@@ -88,14 +87,16 @@ async function handleDownload(sock, from, url) {
       } catch {}
     }
 
-    // ===== SMART DIRECT DOWNLOAD =====
+    // ===== SMART DIRECT DOWNLOAD (FIX PDF BUG) =====
     try {
       const head = await axios.head(url)
-
-      const contentType = head.headers["content-type"]
+      const contentType = head.headers["content-type"] || ""
 
       // IMAGE
-      if (contentType.startsWith("image")) {
+      if (
+        contentType.startsWith("image") ||
+        url.match(/\.(jpg|jpeg|png|webp)$/i)
+      ) {
         return await sock.sendMessage(from, {
           image: { url },
           caption: "🖼️ Image downloaded"
@@ -103,7 +104,10 @@ async function handleDownload(sock, from, url) {
       }
 
       // VIDEO
-      if (contentType.startsWith("video")) {
+      if (
+        contentType.startsWith("video") ||
+        url.match(/\.(mp4|mkv|mov)$/i)
+      ) {
         return await sock.sendMessage(from, {
           video: { url },
           caption: "🎥 Video downloaded"
@@ -111,24 +115,28 @@ async function handleDownload(sock, from, url) {
       }
 
       // AUDIO
-      if (contentType.startsWith("audio")) {
+      if (
+        contentType.startsWith("audio") ||
+        url.match(/\.(mp3|wav|ogg)$/i)
+      ) {
         return await sock.sendMessage(from, {
           audio: { url },
           mimetype: "audio/mpeg"
         })
       }
 
-      // FILE
+      // FALLBACK FILE
       return await sock.sendMessage(from, {
         document: { url },
-        fileName: "file"
+        mimetype: "application/octet-stream",
+        fileName: "download.file"
       })
 
     } catch {
-      // fallback kalau HEAD gagal
       return await sock.sendMessage(from, {
         document: { url },
-        fileName: "download"
+        mimetype: "application/octet-stream",
+        fileName: "download.file"
       })
     }
 
