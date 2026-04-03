@@ -7,7 +7,7 @@ const {
 
 const QRCode = require("qrcode")
 const fs = require("fs")
-const { handleCommand } = require("./ai/brain")
+const { handleCommand, getMemory, addBotReply } = require("./ai/brain")
 const OpenAI = require("openai")
 
 const openai = new OpenAI({
@@ -63,7 +63,6 @@ async function startBot() {
       const m = msg.messages[0]
       if (!m.message) return
 
-      // ❌ ANTI SPAM
       if (m.key.fromMe) return
       if (m.message?.protocolMessage) return
 
@@ -82,22 +81,22 @@ async function startBot() {
 
       const isGroup = from.endsWith("@g.us")
 
-      // ❗ FILTER GRUP (biar gak nimbrung terus)
+      // 🔥 filter grup
       if (isGroup && !text.startsWith(".")) return
 
       console.log("📩:", text)
 
-      // ===== AI SYSTEM (brain.js) =====
+      const sender = m.key.participant || m.key.remoteJid
+
+      // ===== AI SYSTEM =====
       let res = null
       try {
-        const sender = m.key.participant || m.key.remoteJid
-
-res = await handleCommand({
-  text,
-  sender,
-  from,
-  isGroup
-})
+        res = await handleCommand({
+          text,
+          sender,
+          from,
+          isGroup
+        })
       } catch (err) {
         console.log("Brain error:", err.message)
       }
@@ -110,6 +109,7 @@ res = await handleCommand({
       const files = fs.readdirSync("./plugins")
 
       for (let file of files) {
+        delete require.cache[require.resolve(`./plugins/${file}`)]
         const plugin = require(`./plugins/${file}`)
 
         if (text.startsWith("." + plugin.name)) {
@@ -122,18 +122,31 @@ res = await handleCommand({
         }
       }
 
-      // ===== AI CHAT (FALLBACK) =====
+      // ===== AI CHAT (MEMORY) =====
       try {
+        const messages = [
+          {
+            role: "system",
+            content: "Kamu adalah AI WhatsApp yang santai, gaul, dan membantu."
+          },
+          ...getMemory(sender),
+          {
+            role: "user",
+            content: text
+          }
+        ]
+
         const ai = await openai.chat.completions.create({
           model: "gpt-4o-mini",
-          messages: [
-            { role: "user", content: text }
-          ]
+          messages
         })
 
         const reply = ai.choices[0].message.content
 
         await sock.sendMessage(from, { text: reply })
+
+        // 🔥 simpan memory
+        addBotReply(sender, reply)
 
       } catch (err) {
         console.log("AI ERROR:", err.message)
@@ -149,5 +162,4 @@ res = await handleCommand({
   })
 }
 
-// 🔥 Delay biar Railway stabil
 setTimeout(startBot, 3000)
