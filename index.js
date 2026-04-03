@@ -63,7 +63,7 @@ async function startBot() {
       const m = msg.messages[0]
       if (!m.message) return
 
-      // ❌ ANTI SPAM (WAJIB)
+      // ❌ ANTI SPAM
       if (m.key.fromMe) return
       if (m.message?.protocolMessage) return
 
@@ -79,6 +79,11 @@ async function startBot() {
         m.message.imageMessage?.caption
 
       if (!text) return
+
+      const isGroup = from.endsWith("@g.us")
+
+      // ❗ FILTER GRUP (biar gak nimbrung terus)
+      if (isGroup && !text.startsWith(".")) return
 
       console.log("📩:", text)
 
