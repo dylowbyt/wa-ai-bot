@@ -1,85 +1,103 @@
-const {
-  default: makeWASocket,
-  useMultiFileAuthState,
-  DisconnectReason,
-  fetchLatestBaileysVersion
-} = require("@whiskeysockets/baileys")
+const { default: makeWASocket, useMultiFileAuthState } = require("@whiskeysockets/baileys")
+const OpenAI = require("openai")
+const qrcode = require("qrcode")
 
-const QRCode = require("qrcode")
-const fs = require("fs")
-const { handleCommand } = require("./ai/brain")
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+})
 
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState("session")
+    const { state, saveCreds } = await useMultiFileAuthState("session")
 
-  const { version } = await fetchLatestBaileysVersion()
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: false
+    })
 
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    printQRInTerminal: false,
-    browser: ["Ubuntu", "Chrome", "20.0.04"] // 🔥 penting
-  })
+    sock.ev.on("creds.update", saveCreds)
 
-  sock.ev.on("creds.update", saveCreds)
+    // ===== CONNECTION + QR =====
+    sock.ev.on("connection.update", async (update) => {
+        const { connection, qr } = update
 
-  sock.ev.on("connection.update", async (update) => {
-    const { connection, qr, lastDisconnect } = update
-
-    if (qr) {
-      console.log("📱 QR TERDETEKSI")
-
-      const qrImage = await QRCode.toDataURL(qr)
-      console.log(qrImage)
-    }
-
-    if (connection === "open") {
-      console.log("✅ BOT CONNECTED")
-    }
-
-    if (connection === "close") {
-      const reason = lastDisconnect?.error?.output?.statusCode
-      console.log("❌ Disconnect:", reason)
-
-      if (reason !== DisconnectReason.loggedOut) {
-        console.log("🔄 Reconnect 5 detik...")
-        setTimeout(startBot, 5000)
-      } else {
-        console.log("⚠️ Harus scan ulang QR")
-      }
-    }
-  })
-
-  sock.ev.on("messages.upsert", async (msg) => {
-    const m = msg.messages[0]
-    if (!m.message) return
-
-    const text =
-      m.message.conversation ||
-      m.message.extendedTextMessage?.text
-      m.message.imageMessage?.caption
-    if (!text) return
-
-    const res = await handleCommand(text)
-    if (res) {
-      return sock.sendMessage(m.key.remoteJid, { text: res })
-    }
-
-    const files = fs.readdirSync("./plugins")
-
-    for (let file of files) {
-      const plugin = require(`./plugins/${file}`)
-
-      if (text.startsWith("." + plugin.name)) {
-        try {
-          await plugin.run(sock, m)
-        } catch (e) {
-          console.log("Plugin error:", e.message)
+        if (qr) {
+            const qrImage = await qrcode.toDataURL(qr)
+            console.log("\nSCAN QR INI:\n")
+            console.log(qrImage)
         }
-      }
-    }
-  })
+
+        if (connection === "open") {
+            console.log("✅ BOT CONNECTED")
+        }
+
+        if (connection === "close") {
+            console.log("❌ RECONNECTING...")
+            startBot()
+        }
+    })
+
+    // ===== LISTENER PESAN =====
+    sock.ev.on("messages.upsert", async ({ messages }) => {
+        try {
+            const m = messages[0]
+            if (!m.message) return
+
+            const from = m.key.remoteJid
+
+            const msg =
+                m.message.conversation ||
+                m.message.extendedTextMessage?.text ||
+                m.message.imageMessage?.caption
+
+            if (!msg) return
+
+            console.log("📩:", msg)
+
+            // ===== COMMAND =====
+            if (msg.startsWith(".")) {
+
+                if (msg.startsWith(".stiker")) {
+                    if (m.message.imageMessage) {
+                        await sock.sendMessage(from, {
+                            text: "✅ stiker siap dipakai"
+                        })
+                    } else {
+                        await sock.sendMessage(from, {
+                            text: "❌ kirim gambar + .stiker"
+                        })
+                    }
+                }
+
+                return // ⛔ stop di command
+            }
+
+            // ===== AI CHAT =====
+            try {
+                const res = await openai.chat.completions.create({
+                    model: "gpt-4o-mini",
+                    messages: [
+                        { role: "user", content: msg }
+                    ]
+                })
+
+                const reply = res.choices[0].message.content
+
+                await sock.sendMessage(from, {
+                    text: reply
+                })
+
+            } catch (err) {
+                console.log("❌ AI ERROR:", err.message)
+
+                await sock.sendMessage(from, {
+                    text: "⚠️ AI lagi error, cek API key / saldo"
+                })
+            }
+
+        } catch (err) {
+            console.log("❌ SYSTEM ERROR:", err)
+        }
+    })
 }
 
-// 🔥 delay biar Railway gak crash duluan
-setTimeout(startBot, 3000)
+startBot()
