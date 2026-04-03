@@ -8,31 +8,27 @@ module.exports = {
     const from = m.key.remoteJid
 
     try {
-      const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage
+      const quoted =
+        m.message?.extendedTextMessage?.contextInfo?.quotedMessage
 
       const message = quoted || m.message
+      const image = message.imageMessage
 
-      const imageMessage =
-        message.imageMessage ||
-        message.videoMessage
-
-      if (!imageMessage) {
+      if (!image) {
         return sock.sendMessage(from, {
-          text: "⚠️ Kirim / reply gambar atau video dengan .s"
+          text: "⚠️ Kirim / reply gambar dengan .s"
         })
       }
 
-      const stream = await downloadContentFromMessage(
-        imageMessage,
-        imageMessage.mimetype.split("/")[0]
-      )
+      // download
+      const stream = await downloadContentFromMessage(image, "image")
 
       let buffer = Buffer.from([])
-
       for await (const chunk of stream) {
         buffer = Buffer.concat([buffer, chunk])
       }
 
+      // kirim sticker
       await sock.sendMessage(from, {
         sticker: buffer
       })
