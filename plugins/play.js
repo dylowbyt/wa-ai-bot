@@ -19,7 +19,6 @@ module.exports = {
       })
     }
 
-    // 🔍 Cari lagu
     const search = await yts(query)
     const video = search.videos[0]
 
@@ -34,12 +33,16 @@ module.exports = {
     })
 
     try {
-      // 🔥 API downloader (anti error Railway)
-      const res = await axios.get(
-        `https://api.vevioz.com/api/button/mp3/${video.videoId}`
-      )
+      // 🔥 API baru (lebih stabil)
+      const api = `https://api.dlmp3.xyz/api/download?url=https://www.youtube.com/watch?v=${video.videoId}`
 
-      const url = res.data.match(/href="(.*?)"/)[1]
+      const res = await axios.get(api)
+
+      if (!res.data || !res.data.download) {
+        throw new Error("API gagal")
+      }
+
+      const url = res.data.download
 
       await sock.sendMessage(from, {
         audio: { url },
@@ -51,7 +54,7 @@ module.exports = {
       console.log("DOWNLOAD ERROR:", err.message)
 
       await sock.sendMessage(from, {
-        text: "❌ Gagal download lagu"
+        text: "❌ Gagal download lagu (server API lagi down)"
       })
     }
   }
