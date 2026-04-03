@@ -1,16 +1,16 @@
 {
   "name": "wa-ai-bot",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "npm install && node index.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.6.0",
     "axios": "^1.6.0",
     "openai": "^4.0.0",
     "yt-search": "^2.10.4",
-    "ytdl-core": "^4.11.5"
+    "ytdl-core": "^4.11.5",
     "qrcode": "^1.5.4"
   }
 }
