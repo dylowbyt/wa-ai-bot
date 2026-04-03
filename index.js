@@ -90,7 +90,14 @@ async function startBot() {
       // ===== AI SYSTEM (brain.js) =====
       let res = null
       try {
-        res = await handleCommand(text)
+        const sender = m.key.participant || m.key.remoteJid
+
+res = await handleCommand({
+  text,
+  sender,
+  from,
+  isGroup
+})
       } catch (err) {
         console.log("Brain error:", err.message)
       }
