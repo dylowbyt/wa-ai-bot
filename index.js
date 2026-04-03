@@ -1,103 +1,130 @@
-const { default: makeWASocket, useMultiFileAuthState } = require("@whiskeysockets/baileys")
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  fetchLatestBaileysVersion
+} = require("@whiskeysockets/baileys")
+
+const QRCode = require("qrcode")
+const fs = require("fs")
+const { handleCommand } = require("./ai/brain")
 const OpenAI = require("openai")
-const qrcode = require("qrcode")
 
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY
 })
 
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState("session")
+  const { state, saveCreds } = await useMultiFileAuthState("session")
+  const { version } = await fetchLatestBaileysVersion()
 
-    const sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: false
-    })
+  const sock = makeWASocket({
+    version,
+    auth: state,
+    printQRInTerminal: false,
+    browser: ["Ubuntu", "Chrome", "20.0.04"]
+  })
 
-    sock.ev.on("creds.update", saveCreds)
+  sock.ev.on("creds.update", saveCreds)
 
-    // ===== CONNECTION + QR =====
-    sock.ev.on("connection.update", async (update) => {
-        const { connection, qr } = update
+  // ===== CONNECTION =====
+  sock.ev.on("connection.update", async (update) => {
+    const { connection, qr, lastDisconnect } = update
 
-        if (qr) {
-            const qrImage = await qrcode.toDataURL(qr)
-            console.log("\nSCAN QR INI:\n")
-            console.log(qrImage)
+    if (qr) {
+      console.log("📱 QR TERDETEKSI")
+      const qrImage = await QRCode.toDataURL(qr)
+      console.log(qrImage)
+    }
+
+    if (connection === "open") {
+      console.log("✅ BOT CONNECTED")
+    }
+
+    if (connection === "close") {
+      const reason = lastDisconnect?.error?.output?.statusCode
+      console.log("❌ Disconnect:", reason)
+
+      if (reason !== DisconnectReason.loggedOut) {
+        console.log("🔄 Reconnect 5 detik...")
+        setTimeout(startBot, 5000)
+      } else {
+        console.log("⚠️ Harus scan ulang QR")
+      }
+    }
+  })
+
+  // ===== MESSAGE HANDLER =====
+  sock.ev.on("messages.upsert", async (msg) => {
+    try {
+      const m = msg.messages[0]
+      if (!m.message) return
+
+      const from = m.key.remoteJid
+
+      const text =
+        m.message.conversation ||
+        m.message.extendedTextMessage?.text ||
+        m.message.imageMessage?.caption
+
+      if (!text) return
+
+      console.log("📩:", text)
+
+      // ===== AI SYSTEM (brain.js) =====
+      let res = null
+      try {
+        res = await handleCommand(text)
+      } catch (err) {
+        console.log("Brain error:", err.message)
+      }
+
+      if (res) {
+        return await sock.sendMessage(from, { text: res })
+      }
+
+      // ===== PLUGIN SYSTEM =====
+      const files = fs.readdirSync("./plugins")
+
+      for (let file of files) {
+        const plugin = require(`./plugins/${file}`)
+
+        if (text.startsWith("." + plugin.name)) {
+          try {
+            await plugin.run(sock, m)
+            return
+          } catch (e) {
+            console.log("Plugin error:", e.message)
+          }
         }
+      }
 
-        if (connection === "open") {
-            console.log("✅ BOT CONNECTED")
-        }
+      // ===== AI CHAT (FALLBACK) =====
+      try {
+        const ai = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "user", content: text }
+          ]
+        })
 
-        if (connection === "close") {
-            console.log("❌ RECONNECTING...")
-            startBot()
-        }
-    })
+        const reply = ai.choices[0].message.content
 
-    // ===== LISTENER PESAN =====
-    sock.ev.on("messages.upsert", async ({ messages }) => {
-        try {
-            const m = messages[0]
-            if (!m.message) return
+        await sock.sendMessage(from, { text: reply })
 
-            const from = m.key.remoteJid
+      } catch (err) {
+        console.log("AI ERROR:", err.message)
 
-            const msg =
-                m.message.conversation ||
-                m.message.extendedTextMessage?.text ||
-                m.message.imageMessage?.caption
+        await sock.sendMessage(from, {
+          text: "⚠️ AI error, cek API key / saldo"
+        })
+      }
 
-            if (!msg) return
-
-            console.log("📩:", msg)
-
-            // ===== COMMAND =====
-            if (msg.startsWith(".")) {
-
-                if (msg.startsWith(".stiker")) {
-                    if (m.message.imageMessage) {
-                        await sock.sendMessage(from, {
-                            text: "✅ stiker siap dipakai"
-                        })
-                    } else {
-                        await sock.sendMessage(from, {
-                            text: "❌ kirim gambar + .stiker"
-                        })
-                    }
-                }
-
-                return // ⛔ stop di command
-            }
-
-            // ===== AI CHAT =====
-            try {
-                const res = await openai.chat.completions.create({
-                    model: "gpt-4o-mini",
-                    messages: [
-                        { role: "user", content: msg }
-                    ]
-                })
-
-                const reply = res.choices[0].message.content
-
-                await sock.sendMessage(from, {
-                    text: reply
-                })
-
-            } catch (err) {
-                console.log("❌ AI ERROR:", err.message)
-
-                await sock.sendMessage(from, {
-                    text: "⚠️ AI lagi error, cek API key / saldo"
-                })
-            }
-
-        } catch (err) {
-            console.log("❌ SYSTEM ERROR:", err)
-        }
-    })
+    } catch (err) {
+      console.log("SYSTEM ERROR:", err)
+    }
+  })
 }
 
-startBot()
+// 🔥 Delay biar Railway stabil
+setTimeout(startBot, 3000)
