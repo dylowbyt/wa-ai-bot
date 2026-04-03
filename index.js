@@ -74,7 +74,10 @@ async function startBot() {
 
       if (!text) return
 
+      text = text.trim() // 🔥 FIX PENTING
+
       const isGroup = from.endsWith("@g.us")
+
       if (isGroup && !text.startsWith(".")) return
 
       console.log("📩:", text)
@@ -94,10 +97,11 @@ async function startBot() {
         console.log("Brain error:", err.message)
       }
 
-      // 🔥 AUTO COMMAND DARI AI
+      // ===== AUTO COMMAND FIX =====
       if (res) {
         if (res.startsWith(".")) {
-          text = res // lempar ke plugin
+          text = res.trim() // 🔥 FIX UTAMA
+          console.log("AUTO CMD:", text)
         } else {
           return await sock.sendMessage(from, { text: res })
         }
@@ -142,6 +146,7 @@ async function startBot() {
         const reply = ai.choices[0].message.content
 
         await sock.sendMessage(from, { text: reply })
+
         addBotReply(sender, reply)
 
       } catch (err) {
