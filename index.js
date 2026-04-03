@@ -1,37 +1,47 @@
-const { default: makeWASocket, useMultiFileAuthState } = require("@whiskeysockets/baileys")
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys")
 const fs = require("fs")
 const QRCode = require("qrcode")
 const { handleCommand } = require("./ai/brain")
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("session")
-  const sock = makeWASocket({ auth: state })
 
-  // SIMPAN SESSION
+  const sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: false
+  })
+
   sock.ev.on("creds.update", saveCreds)
 
-  // 🔥 QR KE LINK
   sock.ev.on("connection.update", async (update) => {
-    const { connection, qr } = update
+    const { connection, qr, lastDisconnect } = update
 
+    // 🔥 QR FIX
     if (qr) {
-      console.log("📱 Scan QR ini di browser HP kamu:")
-
+      console.log("📱 QR BARU:")
       const qrImage = await QRCode.toDataURL(qr)
       console.log(qrImage)
     }
 
     if (connection === "open") {
-      console.log("✅ Bot berhasil login ke WhatsApp!")
+      console.log("✅ BOT CONNECTED KE WHATSAPP")
     }
 
     if (connection === "close") {
-      console.log("❌ Koneksi terputus, reconnecting...")
-      startBot()
+      const reason = lastDisconnect?.error?.output?.statusCode
+
+      console.log("❌ Disconnect reason:", reason)
+
+      // reconnect otomatis kecuali logout
+      if (reason !== DisconnectReason.loggedOut) {
+        console.log("🔄 Reconnecting...")
+        setTimeout(startBot, 3000)
+      } else {
+        console.log("⚠️ Session logout, scan ulang QR")
+      }
     }
   })
 
-  // MESSAGE HANDLER
   sock.ev.on("messages.upsert", async (msg) => {
     const m = msg.messages[0]
     if (!m.message) return
@@ -42,13 +52,11 @@ async function startBot() {
 
     if (!text) return
 
-    // AI command
     const res = await handleCommand(text)
     if (res) {
       return sock.sendMessage(m.key.remoteJid, { text: res })
     }
 
-    // PLUGIN SYSTEM
     const files = fs.readdirSync("./plugins")
 
     for (let file of files) {
@@ -59,9 +67,6 @@ async function startBot() {
           await plugin.run(sock, m)
         } catch (e) {
           console.log("Plugin error:", e.message)
-          await sock.sendMessage(m.key.remoteJid, {
-            text: "⚠️ fitur error"
-          })
         }
       }
     }
