@@ -14,6 +14,9 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
 
+// 🔥 anti duplicate
+const processed = new Set()
+
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("session")
   const { version } = await fetchLatestBaileysVersion()
@@ -59,6 +62,14 @@ async function startBot() {
     try {
       const m = msg.messages[0]
       if (!m.message) return
+
+      // ❌ ANTI SPAM (WAJIB)
+      if (m.key.fromMe) return
+      if (m.message?.protocolMessage) return
+
+      const id = m.key.id
+      if (processed.has(id)) return
+      processed.add(id)
 
       const from = m.key.remoteJid
 
