@@ -112,7 +112,15 @@ async function startBot() {
 
       for (let file of files) {
         delete require.cache[require.resolve(`./plugins/${file}`)]
-        const plugin = require(`./plugins/${file}`)
+        let plugin
+
+try {
+  delete require.cache[require.resolve(`./plugins/${file}`)]
+  plugin = require(`./plugins/${file}`)
+} catch (err) {
+  console.log("PLUGIN LOAD ERROR:", file, err.message)
+  continue // 🔥 skip plugin error
+}
 
         if (text.startsWith("." + plugin.name)) {
           try {
