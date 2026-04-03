@@ -1,5 +1,5 @@
 const { default: makeWASocket, useMultiFileAuthState } = require("@whiskeysockets/baileys")
-const fs = require("fs")
+const qrcode = require("qrcode")
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState("session")
@@ -9,21 +9,30 @@ async function startBot() {
         printQRInTerminal: false
     })
 
-    // Simpan session
+    // simpan session
     sock.ev.on("creds.update", saveCreds)
 
-    // Status koneksi
-    sock.ev.on("connection.update", (update) => {
-        const { connection } = update
+    // 🔥 HANDLE CONNECTION + QR
+    sock.ev.on("connection.update", async (update) => {
+        const { connection, qr } = update
+
+        if (qr) {
+            const qrImage = await qrcode.toDataURL(qr)
+            console.log("\n🔗 SCAN QR INI DI BROWSER:\n")
+            console.log(qrImage)
+        }
+
         if (connection === "open") {
             console.log("✅ Bot Connected to WhatsApp")
-        } else if (connection === "close") {
+        }
+
+        if (connection === "close") {
             console.log("❌ Connection closed, reconnecting...")
             startBot()
         }
     })
 
-    // LISTENER PESAN (INI YANG PENTING)
+    // 🔥 LISTENER PESAN (WAJIB ADA)
     sock.ev.on("messages.upsert", async ({ messages }) => {
         try {
             const m = messages[0]
@@ -31,7 +40,6 @@ async function startBot() {
 
             const from = m.key.remoteJid
 
-            // Ambil isi pesan dari semua tipe
             const msg =
                 m.message.conversation ||
                 m.message.imageMessage?.caption ||
@@ -42,20 +50,22 @@ async function startBot() {
 
             console.log("📩 Pesan masuk:", msg)
 
-            // ===== TEST RESPON =====
+            // ===== TEST =====
             if (msg.toLowerCase() === "halo") {
-                await sock.sendMessage(from, { text: "Halo juga 👋" })
+                await sock.sendMessage(from, {
+                    text: "Halo juga 👋"
+                })
             }
 
-            // ===== FITUR STIKER (DETECT DULU) =====
+            // ===== STIKER (DETECT DULU) =====
             if (msg.startsWith(".stiker")) {
                 if (m.message.imageMessage) {
                     await sock.sendMessage(from, {
-                        text: "✅ Gambar terdeteksi, stiker siap dibuat"
+                        text: "✅ Gambar terdeteksi, siap jadi stiker"
                     })
                 } else {
                     await sock.sendMessage(from, {
-                        text: "❌ Kirim gambar dengan caption .stiker"
+                        text: "❌ Kirim gambar + caption .stiker"
                     })
                 }
             }
