@@ -1,14 +1,24 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys")
-const fs = require("fs")
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  fetchLatestBaileysVersion
+} = require("@whiskeysockets/baileys")
+
 const QRCode = require("qrcode")
+const fs = require("fs")
 const { handleCommand } = require("./ai/brain")
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("session")
 
+  const { version } = await fetchLatestBaileysVersion()
+
   const sock = makeWASocket({
+    version,
     auth: state,
-    printQRInTerminal: false
+    printQRInTerminal: false,
+    browser: ["Ubuntu", "Chrome", "20.0.04"] // 🔥 penting
   })
 
   sock.ev.on("creds.update", saveCreds)
@@ -16,28 +26,26 @@ async function startBot() {
   sock.ev.on("connection.update", async (update) => {
     const { connection, qr, lastDisconnect } = update
 
-    // 🔥 QR FIX
     if (qr) {
-      console.log("📱 QR BARU:")
+      console.log("📱 QR TERDETEKSI")
+
       const qrImage = await QRCode.toDataURL(qr)
       console.log(qrImage)
     }
 
     if (connection === "open") {
-      console.log("✅ BOT CONNECTED KE WHATSAPP")
+      console.log("✅ BOT CONNECTED")
     }
 
     if (connection === "close") {
       const reason = lastDisconnect?.error?.output?.statusCode
+      console.log("❌ Disconnect:", reason)
 
-      console.log("❌ Disconnect reason:", reason)
-
-      // reconnect otomatis kecuali logout
       if (reason !== DisconnectReason.loggedOut) {
-        console.log("🔄 Reconnecting...")
-        setTimeout(startBot, 3000)
+        console.log("🔄 Reconnect 5 detik...")
+        setTimeout(startBot, 5000)
       } else {
-        console.log("⚠️ Session logout, scan ulang QR")
+        console.log("⚠️ Harus scan ulang QR")
       }
     }
   })
@@ -73,4 +81,5 @@ async function startBot() {
   })
 }
 
-startBot()
+// 🔥 delay biar Railway gak crash duluan
+setTimeout(startBot, 3000)
