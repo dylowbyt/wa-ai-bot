@@ -55,8 +55,9 @@ async function startBot() {
     if (!m.message) return
 
     const text =
-      m.message.conversation ||
-      m.message.extendedTextMessage?.text
+  m.message.conversation ||
+  m.message.extendedTextMessage?.text ||
+  m.message.imageMessage?.caption
 
     if (!text) return
 
