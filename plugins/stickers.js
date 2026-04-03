@@ -2,25 +2,31 @@ const { downloadMediaMessage } = require("@whiskeysockets/baileys")
 
 module.exports = {
   name: "sticker",
-  alias: ["s"]
+  alias: ["s"],
 
   async run(sock, m) {
     const from = m.key.remoteJid
 
-    const isImage =
-      m.message.imageMessage ||
-      m.message.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage
-
-    if (!isImage) {
-      return sock.sendMessage(from, {
-        text: "⚠️ Kirim gambar dengan caption .sticker atau reply gambar"
-      })
-    }
-
     try {
-      // ambil gambar
+      const quoted =
+        m.message?.extendedTextMessage?.contextInfo?.quotedMessage
+
+      const isImage =
+        m.message.imageMessage ||
+        quoted?.imageMessage
+
+      if (!isImage) {
+        return sock.sendMessage(from, {
+          text: "⚠️ Kirim / reply gambar dengan .s"
+        })
+      }
+
+      const msg = quoted
+        ? { message: quoted }
+        : m
+
       const buffer = await downloadMediaMessage(
-        m,
+        msg,
         "buffer",
         {},
         {
@@ -29,7 +35,6 @@ module.exports = {
         }
       )
 
-      // kirim sebagai sticker
       await sock.sendMessage(from, {
         sticker: buffer
       })
