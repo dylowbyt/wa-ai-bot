@@ -107,32 +107,31 @@ async function startBot() {
         }
       }
 
-      // ===== PLUGIN SYSTEM =====
+      // ===== PLUGIN SYSTEM (ANTI CRASH) =====
       const files = fs.readdirSync("./plugins")
 
       for (let file of files) {
-        delete require.cache[require.resolve(`./plugins/${file}`)]
         let plugin
 
-try {
-  delete require.cache[require.resolve(`./plugins/${file}`)]
-  plugin = require(`./plugins/${file}`)
-} catch (err) {
-  console.log("PLUGIN LOAD ERROR:", file, err.message)
-  continue // 🔥 skip plugin error
-}
+        try {
+          delete require.cache[require.resolve(`./plugins/${file}`)]
+          plugin = require(`./plugins/${file}`)
+        } catch (err) {
+          console.log("PLUGIN LOAD ERROR:", file, err.message)
+          continue // 🔥 skip plugin rusak
+        }
 
         if (text.startsWith("." + plugin.name)) {
           try {
             await plugin.run(sock, m)
             return
           } catch (e) {
-            console.log("Plugin error:", e.message)
+            console.log("Plugin run error:", e.message)
           }
         }
       }
 
-      // 🔥 kalau command dari AI tapi plugin gak ada
+      // kalau dari AI tapi plugin gak ada
       if (isFromAI) {
         return await sock.sendMessage(from, {
           text: "❌ Fitur tidak ditemukan"
