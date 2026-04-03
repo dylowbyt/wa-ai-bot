@@ -11,7 +11,7 @@ async function handleCommand({ text, sender, imageBuffer }) {
     memory[sender].shift()
   }
 
-  // 🔥 AUTO DETECT DOWNLOAD LAGU
+  // 🔥 AUTO DOWNLOAD LAGU
   if (
     text.includes("download lagu") ||
     text.includes("putar lagu") ||
@@ -26,7 +26,7 @@ async function handleCommand({ text, sender, imageBuffer }) {
     return ".play " + query
   }
 
-  // 🔥 fitur lama tetap jalan
+  // fitur lama tetap aman
   if (imageBuffer) {
     return await visionMode(text, imageBuffer)
   }
