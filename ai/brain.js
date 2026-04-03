@@ -1,30 +1,40 @@
 const memory = {}
 
-async function handleCommand({ text, sender, from, isGroup, imageBuffer }) {
+async function handleCommand({ text, sender, imageBuffer }) {
   text = text.toLowerCase()
 
-  // 🔥 buat memory user
   if (!memory[sender]) memory[sender] = []
 
-  // simpan chat user
   memory[sender].push({ role: "user", content: text })
 
-  // batasi memory biar ringan
   if (memory[sender].length > 5) {
     memory[sender].shift()
   }
 
-  // 🔥 kalau ada gambar → pakai vision
+  // 🔥 AUTO DETECT DOWNLOAD LAGU
+  if (
+    text.includes("download lagu") ||
+    text.includes("putar lagu") ||
+    text.includes("play lagu")
+  ) {
+    const query = text
+      .replace("download lagu", "")
+      .replace("putar lagu", "")
+      .replace("play lagu", "")
+      .trim()
+
+    return ".play " + query
+  }
+
+  // 🔥 fitur lama tetap jalan
   if (imageBuffer) {
     return await visionMode(text, imageBuffer)
   }
 
-  // 🔥 mode coding
   if (text.includes("buat fitur") || text.includes("coding")) {
     return await codingMode(text)
   }
 
-  // 🔥 mode analisa
   if (text.includes("harga") || text.includes("berapa")) {
     return await analyzeMode(text)
   }
@@ -32,12 +42,10 @@ async function handleCommand({ text, sender, from, isGroup, imageBuffer }) {
   return null
 }
 
-// 🔥 ambil memory
 function getMemory(sender) {
   return memory[sender] || []
 }
 
-// 🔥 simpan balasan bot
 function addBotReply(sender, reply) {
   if (!memory[sender]) memory[sender] = []
 
