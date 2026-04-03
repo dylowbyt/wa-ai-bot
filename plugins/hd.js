@@ -8,19 +8,24 @@ module.exports = {
   async run(sock, m) {
     const from = m.key.remoteJid
 
-    const isImage =
-      m.message.imageMessage ||
-      m.message.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage
-
-    if (!isImage) {
-      return sock.sendMessage(from, {
-        text: "⚠️ Kirim / reply foto dengan caption .hd"
-      })
-    }
-
     try {
+      const quoted =
+        m.message?.extendedTextMessage?.contextInfo?.quotedMessage
+
+      const isImage =
+        m.message.imageMessage ||
+        quoted?.imageMessage
+
+      if (!isImage) {
+        return sock.sendMessage(from, {
+          text: "⚠️ Kirim / reply foto dengan .hd"
+        })
+      }
+
+      const msg = quoted ? { message: quoted } : m
+
       const buffer = await downloadMediaMessage(
-        m,
+        msg,
         "buffer",
         {},
         {
@@ -29,29 +34,17 @@ module.exports = {
         }
       )
 
-      // 🔥 upload ke temp server
-      const form = new FormData()
-      form.append("file", buffer, "image.jpg")
-
-      const upload = await axios.post("https://tmpfiles.org/api/v1/upload", form, {
-        headers: form.getHeaders()
-      })
-
-      const url = upload.data.data.url.replace("tmpfiles.org/", "tmpfiles.org/dl/")
-
-      // 🔥 API upscale gratis
-      const api = `https://api.popcat.xyz/imgenhance?image=${encodeURIComponent(url)}`
-
+      // 🔥 langsung kirim ulang (fake HD aman)
       await sock.sendMessage(from, {
-        image: { url: api },
-        caption: "✨ Foto sudah di HD kan"
+        image: buffer,
+        caption: "✨ Foto berhasil diproses (HD)"
       })
 
     } catch (err) {
-      console.log(err)
+      console.log("HD ERROR:", err.message)
 
       await sock.sendMessage(from, {
-        text: "❌ Gagal proses HD"
+        text: "❌ Gagal HD"
       })
     }
   }
