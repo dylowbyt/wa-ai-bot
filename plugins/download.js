@@ -11,11 +11,11 @@ module.exports = {
       m.message.conversation ||
       m.message.extendedTextMessage?.text
 
-    const url = text.replace(/^\.dl|\.download/, "").trim()
+    const url = text.replace(/^(\.dl|\.download)\s*/, "").trim()
 
     if (!url) {
       return sock.sendMessage(from, {
-        text: "⚠️ Masukkan link"
+        text: "⚠️ Contoh:\n.dl https://link.com"
       })
     }
 
@@ -23,71 +23,114 @@ module.exports = {
   }
 }
 
-// 🔥 AUTO DETECT (dipakai juga buat AI nanti)
+// ===== MAIN HANDLER =====
 async function handleDownload(sock, from, url) {
   try {
     await sock.sendMessage(from, {
       text: "⏳ Processing link..."
     })
 
-    // ===== FILE DIRECT (pdf, mp4, dll) =====
-    if (url.match(/\.(mp4|mp3|jpg|png|pdf|zip|docx?)$/i)) {
-      return await sock.sendMessage(from, {
-        document: { url },
-        fileName: "file"
+    // ===== VALIDASI URL =====
+    if (!isValidUrl(url)) {
+      return sock.sendMessage(from, {
+        text: "❌ Link tidak valid"
       })
     }
 
     // ===== TIKTOK =====
     if (url.includes("tiktok.com")) {
-      const api = `https://api.tiklydown.eu.org/api/download?url=${url}`
-      const res = await axios.get(api)
+      try {
+        const api = `https://api.tiklydown.eu.org/api/download?url=${url}`
+        const res = await axios.get(api)
 
-      const video = res.data.video?.noWatermark
+        const video = res.data.video?.noWatermark
 
-      if (!video) throw "TT ERROR"
-
-      return await sock.sendMessage(from, {
-        video: { url: video },
-        caption: "🎵 TikTok downloaded"
-      })
+        if (video) {
+          return await sock.sendMessage(from, {
+            video: { url: video },
+            caption: "🎵 TikTok HD"
+          })
+        }
+      } catch {}
     }
 
     // ===== INSTAGRAM =====
     if (url.includes("instagram.com")) {
-      const api = `https://api.vreden.my.id/api/igdl?url=${url}`
-      const res = await axios.get(api)
+      try {
+        const api = `https://api.vreden.my.id/api/igdl?url=${url}`
+        const res = await axios.get(api)
 
-      const media = res.data.result?.[0]?.url
+        const media = res.data.result?.[0]?.url
 
-      if (!media) throw "IG ERROR"
-
-      return await sock.sendMessage(from, {
-        video: { url: media },
-        caption: "📸 Instagram downloaded"
-      })
+        if (media) {
+          return await sock.sendMessage(from, {
+            video: { url: media },
+            caption: "📸 Instagram"
+          })
+        }
+      } catch {}
     }
 
     // ===== YOUTUBE =====
     if (url.includes("youtube.com") || url.includes("youtu.be")) {
-      const api = `https://api.dlmp3.xyz/api/download?url=${url}`
-      const res = await axios.get(api)
+      try {
+        const api = `https://api.dlmp3.xyz/api/download?url=${url}`
+        const res = await axios.get(api)
 
-      const audio = res.data.download
+        const audio = res.data.download
 
-      if (!audio) throw "YT ERROR"
-
-      return await sock.sendMessage(from, {
-        audio: { url: audio },
-        mimetype: "audio/mpeg"
-      })
+        if (audio) {
+          return await sock.sendMessage(from, {
+            audio: { url: audio },
+            mimetype: "audio/mpeg"
+          })
+        }
+      } catch {}
     }
 
-    // ===== FALLBACK (Coba kirim sebagai file) =====
-    return await sock.sendMessage(from, {
-      document: { url },
-      fileName: "download"
-    })
+    // ===== SMART DIRECT DOWNLOAD =====
+    try {
+      const head = await axios.head(url)
+
+      const contentType = head.headers["content-type"]
+
+      // IMAGE
+      if (contentType.startsWith("image")) {
+        return await sock.sendMessage(from, {
+          image: { url },
+          caption: "🖼️ Image downloaded"
+        })
+      }
+
+      // VIDEO
+      if (contentType.startsWith("video")) {
+        return await sock.sendMessage(from, {
+          video: { url },
+          caption: "🎥 Video downloaded"
+        })
+      }
+
+      // AUDIO
+      if (contentType.startsWith("audio")) {
+        return await sock.sendMessage(from, {
+          audio: { url },
+          mimetype: "audio/mpeg"
+        })
+      }
+
+      // FILE
+      return await sock.sendMessage(from, {
+        document: { url },
+        fileName: "file"
+      })
+
+    } catch {
+      // fallback kalau HEAD gagal
+      return await sock.sendMessage(from, {
+        document: { url },
+        fileName: "download"
+      })
+    }
 
   } catch (err) {
     console.log("DL ERROR:", err)
@@ -95,5 +138,15 @@ async function handleDownload(sock, from, url) {
     await sock.sendMessage(from, {
       text: "❌ Gagal download link"
     })
+  }
+}
+
+// ===== VALIDATOR =====
+function isValidUrl(string) {
+  try {
+    new URL(string)
+    return true
+  } catch {
+    return false
   }
 }
