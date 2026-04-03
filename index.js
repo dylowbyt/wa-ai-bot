@@ -107,8 +107,12 @@ async function startBot() {
         }
       }
 
-      // ===== PLUGIN SYSTEM (ANTI CRASH) =====
+      // ===== PLUGIN SYSTEM (SUPPORT ALIAS + ANTI CRASH) =====
       const files = fs.readdirSync("./plugins")
+
+      const command = text.startsWith(".")
+        ? text.slice(1).split(" ")[0].toLowerCase()
+        : null
 
       for (let file of files) {
         let plugin
@@ -118,10 +122,15 @@ async function startBot() {
           plugin = require(`./plugins/${file}`)
         } catch (err) {
           console.log("PLUGIN LOAD ERROR:", file, err.message)
-          continue // 🔥 skip plugin rusak
+          continue
         }
 
-        if (text.startsWith("." + plugin.name)) {
+        if (!command) continue
+
+        if (
+          command === plugin.name ||
+          (plugin.alias && plugin.alias.includes(command))
+        ) {
           try {
             await plugin.run(sock, m)
             return
@@ -131,7 +140,6 @@ async function startBot() {
         }
       }
 
-      // kalau dari AI tapi plugin gak ada
       if (isFromAI) {
         return await sock.sendMessage(from, {
           text: "❌ Fitur tidak ditemukan"
