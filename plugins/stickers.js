@@ -1,4 +1,4 @@
-const { downloadMediaMessage } = require("@whiskeysockets/baileys")
+const { downloadContentFromMessage } = require("@whiskeysockets/baileys")
 
 module.exports = {
   name: "sticker",
@@ -8,39 +8,37 @@ module.exports = {
     const from = m.key.remoteJid
 
     try {
-      const quoted =
-        m.message?.extendedTextMessage?.contextInfo?.quotedMessage
+      const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage
 
-      const isImage =
-        m.message.imageMessage ||
-        quoted?.imageMessage
+      const message = quoted || m.message
 
-      if (!isImage) {
+      const imageMessage =
+        message.imageMessage ||
+        message.videoMessage
+
+      if (!imageMessage) {
         return sock.sendMessage(from, {
-          text: "⚠️ Kirim / reply gambar dengan .s"
+          text: "⚠️ Kirim / reply gambar atau video dengan .s"
         })
       }
 
-      const msg = quoted
-        ? { message: quoted }
-        : m
-
-      const buffer = await downloadMediaMessage(
-        msg,
-        "buffer",
-        {},
-        {
-          logger: console,
-          reuploadRequest: sock.updateMediaMessage
-        }
+      const stream = await downloadContentFromMessage(
+        imageMessage,
+        imageMessage.mimetype.split("/")[0]
       )
+
+      let buffer = Buffer.from([])
+
+      for await (const chunk of stream) {
+        buffer = Buffer.concat([buffer, chunk])
+      }
 
       await sock.sendMessage(from, {
         sticker: buffer
       })
 
     } catch (err) {
-      console.log("STICKER ERROR:", err.message)
+      console.log("STICKER ERROR:", err)
 
       await sock.sendMessage(from, {
         text: "❌ Gagal buat sticker"
