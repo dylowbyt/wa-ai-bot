@@ -1,11 +1,19 @@
 const { installFeature } = require("./installer")
-
+const res = await handleCommand(text, imageBuffer)
 async function handleCommand(text) {
-  if (!text) return null
+  text = text.toLowerCase()
 
-  if (text.startsWith("tambah fitur")) {
-    const fitur = text.replace("tambah fitur", "").trim()
-    return await installFeature(fitur)
+  // 🔥 DETEKSI MODE
+  if (text.includes("buat fitur") || text.includes("coding")) {
+    return await codingMode(text)
+  }
+
+  if (text.includes("harga") || text.includes("berapa")) {
+    return await analyzeMode(text)
+  }
+
+  if (text.includes("gambar") || text.includes("foto")) {
+    return await imageMode(text)
   }
 
   return null
