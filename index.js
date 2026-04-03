@@ -30,7 +30,6 @@ async function startBot() {
 
   sock.ev.on("creds.update", saveCreds)
 
-  // ===== CONNECTION =====
   sock.ev.on("connection.update", async (update) => {
     const { connection, qr, lastDisconnect } = update
 
@@ -49,15 +48,11 @@ async function startBot() {
       console.log("❌ Disconnect:", reason)
 
       if (reason !== DisconnectReason.loggedOut) {
-        console.log("🔄 Reconnect 5 detik...")
         setTimeout(startBot, 5000)
-      } else {
-        console.log("⚠️ Harus scan ulang QR")
       }
     }
   })
 
-  // ===== MESSAGE HANDLER =====
   sock.ev.on("messages.upsert", async (msg) => {
     try {
       const m = msg.messages[0]
@@ -72,7 +67,7 @@ async function startBot() {
 
       const from = m.key.remoteJid
 
-      const text =
+      let text =
         m.message.conversation ||
         m.message.extendedTextMessage?.text ||
         m.message.imageMessage?.caption
@@ -80,8 +75,6 @@ async function startBot() {
       if (!text) return
 
       const isGroup = from.endsWith("@g.us")
-
-      // 🔥 filter grup
       if (isGroup && !text.startsWith(".")) return
 
       console.log("📩:", text)
@@ -101,8 +94,13 @@ async function startBot() {
         console.log("Brain error:", err.message)
       }
 
+      // 🔥 AUTO COMMAND DARI AI
       if (res) {
-        return await sock.sendMessage(from, { text: res })
+        if (res.startsWith(".")) {
+          text = res // lempar ke plugin
+        } else {
+          return await sock.sendMessage(from, { text: res })
+        }
       }
 
       // ===== PLUGIN SYSTEM =====
@@ -144,8 +142,6 @@ async function startBot() {
         const reply = ai.choices[0].message.content
 
         await sock.sendMessage(from, { text: reply })
-
-        // 🔥 simpan memory
         addBotReply(sender, reply)
 
       } catch (err) {
