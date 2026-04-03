@@ -14,7 +14,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
 
-// 🔥 anti duplicate
 const processed = new Set()
 
 async function startBot() {
@@ -73,11 +72,9 @@ async function startBot() {
         m.message.imageMessage?.caption
 
       if (!text) return
-
-      text = text.trim() // 🔥 FIX PENTING
+      text = text.trim()
 
       const isGroup = from.endsWith("@g.us")
-
       if (isGroup && !text.startsWith(".")) return
 
       console.log("📩:", text)
@@ -86,6 +83,8 @@ async function startBot() {
 
       // ===== AI SYSTEM =====
       let res = null
+      let isFromAI = false
+
       try {
         res = await handleCommand({
           text,
@@ -97,13 +96,14 @@ async function startBot() {
         console.log("Brain error:", err.message)
       }
 
-      // ===== AUTO COMMAND FIX =====
       if (res) {
         if (res.startsWith(".")) {
-          text = res.trim() // 🔥 FIX UTAMA
+          text = res.trim()
+          isFromAI = true
           console.log("AUTO CMD:", text)
         } else {
-          return await sock.sendMessage(from, { text: res })
+          await sock.sendMessage(from, { text: res })
+          return
         }
       }
 
@@ -124,37 +124,45 @@ async function startBot() {
         }
       }
 
-      // ===== AI CHAT (MEMORY) =====
-      try {
-        const messages = [
-          {
-            role: "system",
-            content: "Kamu adalah AI WhatsApp yang santai, gaul, dan membantu."
-          },
-          ...getMemory(sender),
-          {
-            role: "user",
-            content: text
-          }
-        ]
-
-        const ai = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages
+      // 🔥 kalau command dari AI tapi plugin gak ada
+      if (isFromAI) {
+        return await sock.sendMessage(from, {
+          text: "❌ Fitur tidak ditemukan"
         })
+      }
 
-        const reply = ai.choices[0].message.content
+      // ===== AI CHAT (PRIVATE) =====
+      if (!isGroup) {
+        try {
+          const messages = [
+            {
+              role: "system",
+              content: "Kamu adalah AI WhatsApp yang santai, gaul, dan membantu."
+            },
+            ...getMemory(sender),
+            {
+              role: "user",
+              content: text
+            }
+          ]
 
-        await sock.sendMessage(from, { text: reply })
+          const ai = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages
+          })
 
-        addBotReply(sender, reply)
+          const reply = ai.choices[0].message.content
 
-      } catch (err) {
-        console.log("AI ERROR:", err.message)
+          await sock.sendMessage(from, { text: reply })
+          addBotReply(sender, reply)
 
-        await sock.sendMessage(from, {
-          text: "⚠️ AI error, cek API key / saldo"
-        })
+        } catch (err) {
+          console.log("AI ERROR:", err.message)
+
+          await sock.sendMessage(from, {
+            text: "⚠️ AI error, cek API key / saldo"
+          })
+        }
       }
 
     } catch (err) {
