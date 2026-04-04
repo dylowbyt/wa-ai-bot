@@ -149,7 +149,7 @@ async function startBot() {
       }
 
       // ===== PLUGIN SYSTEM =====
-      const files = fs.readdirSync("./plugins")
+      const files = fs.readdirSync("./plugins").filter(f => f.endsWith(".js"))
 
       const command = text.startsWith(".")
         ? text.slice(1).split(" ")[0].toLowerCase()
@@ -198,7 +198,7 @@ async function startBot() {
             const base64 = imageBuffer.toString("base64")
 
             const resGemini = await axios.post(
-              `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+              `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
               {
                 contents: [
                   {
