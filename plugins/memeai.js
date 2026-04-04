@@ -48,7 +48,7 @@ module.exports = {
 
       // ===== GEMINI VISION =====
       const gemini = await axios.post(
-        `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           contents: [
             {
@@ -81,28 +81,59 @@ module.exports = {
         bottom = "ya begitulah"
       }
 
-      // ===== UPLOAD FOTO ke 0x0.st =====
-      const form = new FormData()
-      form.append("file", buffer, { filename: "image.jpg", contentType: "image/jpeg" })
+      // ===== UPLOAD FOTO — coba beberapa host =====
+      let imageUrl = null
 
-      const upload = await axios.post("https://0x0.st", form, {
-        headers: form.getHeaders(),
-        timeout: 30000
-      })
+      // Upload ke tmpfiles.org
+      try {
+        const form1 = new FormData()
+        form1.append("file", buffer, { filename: "image.jpg", contentType: "image/jpeg" })
+        const up1 = await axios.post("https://tmpfiles.org/api/v1/upload", form1, {
+          headers: form1.getHeaders(),
+          timeout: 30000
+        })
+        const rawUrl = up1.data?.data?.url
+        if (rawUrl && rawUrl.startsWith("http")) {
+          imageUrl = rawUrl.replace("tmpfiles.org/", "tmpfiles.org/dl/")
+        }
+      } catch {}
 
-      const imageUrl = upload.data.trim()
-
-      if (!imageUrl.startsWith("http")) {
-        throw new Error("Upload gagal: " + imageUrl)
+      // Fallback ke 0x0.st
+      if (!imageUrl) {
+        try {
+          const form2 = new FormData()
+          form2.append("file", buffer, { filename: "image.jpg", contentType: "image/jpeg" })
+          const up2 = await axios.post("https://0x0.st", form2, {
+            headers: form2.getHeaders(),
+            timeout: 30000
+          })
+          const rawUrl2 = up2.data?.trim()
+          if (rawUrl2?.startsWith("http")) imageUrl = rawUrl2
+        } catch {}
       }
 
-      // ===== GENERATE MEME =====
-      const memeUrl = `https://api.popcat.xyz/meme?image=${encodeURIComponent(imageUrl)}&top=${encodeURIComponent(top)}&bottom=${encodeURIComponent(bottom)}`
+      if (!imageUrl) throw new Error("Semua server upload gagal")
 
-      await sock.sendMessage(from, {
-        image: { url: memeUrl },
-        caption: `😂 *${top}*\n_${bottom}_`
-      })
+      // ===== GENERATE MEME — coba popcat lalu fallback teks =====
+      let memeSuccess = false
+
+      try {
+        const memeUrl = `https://api.popcat.xyz/meme?image=${encodeURIComponent(imageUrl)}&top=${encodeURIComponent(top)}&bottom=${encodeURIComponent(bottom)}`
+
+        await sock.sendMessage(from, {
+          image: { url: memeUrl },
+          caption: `😂 *${top}*\n_${bottom}_`
+        })
+        memeSuccess = true
+      } catch {}
+
+      // Fallback: kirim gambar asli + teks meme
+      if (!memeSuccess) {
+        await sock.sendMessage(from, {
+          image: buffer,
+          caption: `😂 *MEME AI*\n\n⬆️ *${top}*\n⬇️ _${bottom}_`
+        })
+      }
 
     } catch (err) {
       console.log("MEMEAI ERROR:", err?.message || err)

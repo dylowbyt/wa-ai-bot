@@ -41,6 +41,18 @@ module.exports = {
         }
       )
 
+      // ===== CEK FFMPEG =====
+      const hasFfmpeg = await new Promise(resolve => {
+        exec("ffmpeg -version", { timeout: 5000 }, (err) => resolve(!err))
+      })
+
+      if (!hasFfmpeg) {
+        await sock.sendMessage(from, {
+          text: "❌ ffmpeg tidak tersedia di server ini\nFitur .ptv memerlukan ffmpeg"
+        })
+        return
+      }
+
       // ===== SAVE dengan nama unik =====
       const timestamp = Date.now()
       const inputPath = path.join(__dirname, `../ptv_input_${timestamp}.jpg`)
@@ -48,7 +60,6 @@ module.exports = {
 
       fs.writeFileSync(inputPath, buffer)
 
-      // ===== FIX: Tambah -y (overwrite), kutip path, dan sederhanakan filter agar lebih stabil =====
       await new Promise((resolve, reject) => {
         exec(
           `ffmpeg -y -loop 1 -i "${inputPath}" -vf "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2" -t 5 -c:v libx264 -pix_fmt yuv420p -r 24 "${outputPath}"`,
@@ -75,7 +86,7 @@ module.exports = {
       console.log("PTV ERROR:", err?.message)
 
       await sock.sendMessage(from, {
-        text: "❌ Gagal convert foto ke video\nPastikan ffmpeg terinstall"
+        text: "❌ Gagal convert foto ke video\nPastikan ffmpeg terinstall di server"
       })
     }
   }

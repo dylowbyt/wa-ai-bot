@@ -26,33 +26,58 @@ module.exports = {
       // Batasi 500 karakter
       cleanText = cleanText.slice(0, 500)
 
-      // ===== FIX: Gunakan API TTS yang lebih stabil =====
-      // Opsi 1: StreamElements (Brian = English, tapi tetap dicoba)
-      const url = `https://api.streamelements.com/kappa/v2/speech?voice=Brian&text=${encodeURIComponent(cleanText)}`
-
       let audioBuffer = null
 
+      // Opsi 1: StreamElements
       try {
-        const res = await axios.get(url, {
+        const seVoice = text.startsWith("en ") ? "Brian" : "id-ID-ArdiNeural"
+        const seUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${seVoice}&text=${encodeURIComponent(cleanText)}`
+        const res = await axios.get(seUrl, {
           responseType: "arraybuffer",
           timeout: 15000,
           headers: { "User-Agent": "Mozilla/5.0" }
         })
-        audioBuffer = Buffer.from(res.data)
+        if (res.data && res.data.byteLength > 1000) {
+          audioBuffer = Buffer.from(res.data)
+        }
       } catch {}
 
-      // Opsi 2: TTS Google sebagai fallback
+      // Opsi 2: Google TTS
       if (!audioBuffer) {
-        const googleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=id&client=tw-ob`
-        const res = await axios.get(googleUrl, {
-          responseType: "arraybuffer",
-          timeout: 15000,
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "Referer": "https://translate.google.com"
+        try {
+          const lang = text.startsWith("en ") ? "en" : "id"
+          const googleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=${lang}&client=tw-ob`
+          const res = await axios.get(googleUrl, {
+            responseType: "arraybuffer",
+            timeout: 15000,
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+              "Referer": "https://translate.google.com"
+            }
+          })
+          if (res.data && res.data.byteLength > 1000) {
+            audioBuffer = Buffer.from(res.data)
           }
-        })
-        audioBuffer = Buffer.from(res.data)
+        } catch {}
+      }
+
+      // Opsi 3: TikTok TTS API (gratis, stabil)
+      if (!audioBuffer) {
+        try {
+          const tiktokLang = text.startsWith("en ") ? "en_us_001" : "id_001"
+          const res3 = await axios.post(
+            "https://tiktok-tts.weilnet.workers.dev/api/generation",
+            { text: cleanText, voice: tiktokLang },
+            { timeout: 15000 }
+          )
+          if (res3.data?.data) {
+            audioBuffer = Buffer.from(res3.data.data, "base64")
+          }
+        } catch {}
+      }
+
+      if (!audioBuffer) {
+        throw new Error("Semua API TTS gagal")
       }
 
       await sock.sendMessage(from, {
@@ -63,7 +88,7 @@ module.exports = {
 
     } catch (err) {
       console.log("TTS ERROR:", err?.message)
-      sock.sendMessage(from, { text: "❌ Gagal TTS, coba lagi nanti" })
+      sock.sendMessage(from, { text: "❌ Gagal TTS, semua server sedang down. Coba lagi nanti" })
     }
   }
 }

@@ -5,9 +5,9 @@ module.exports = {
   async run(sock, m) {
     const from = m.key.remoteJid
 
-    let text =
-      m.message.conversation ||
-      m.message.extendedTextMessage?.text
+    const text =
+      m.message?.conversation ||
+      m.message?.extendedTextMessage?.text || ""
 
     const args = text.split(" ")
     const cmd = args[1]?.toLowerCase()

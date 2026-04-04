@@ -3,24 +3,30 @@ const yts = require("yt-search")
 
 module.exports = {
   name: "play",
+  alias: ["lagu", "music"],
 
-  async run(sock, m) {
+  async run(sock, m, args) {
     const from = m.key.remoteJid
 
     const text =
-      m.message.conversation ||
-      m.message.extendedTextMessage?.text
+      m.message?.conversation ||
+      m.message?.extendedTextMessage?.text || ""
 
-    const query = text.replace(".play", "").trim()
+    const query = args.length ? args.join(" ") : text.replace(/^\.(play|lagu|music)\s*/i, "").trim()
 
     if (!query) {
       return sock.sendMessage(from, {
-        text: "⚠️ Masukkan judul lagu"
+        text: "⚠️ Contoh:\n.play judul lagu"
       })
     }
 
-    const search = await yts(query)
-    const video = search.videos[0]
+    let search, video
+    try {
+      search = await yts(query)
+      video = search.videos[0]
+    } catch (e) {
+      console.log("YTS ERROR:", e.message)
+    }
 
     if (!video) {
       return sock.sendMessage(from, {
@@ -32,29 +38,57 @@ module.exports = {
       text: `🎵 Ditemukan:\n${video.title}\n⏳ Downloading...`
     })
 
+    const ytUrl = `https://www.youtube.com/watch?v=${video.videoId}`
+    let audioUrl = null
+
+    // API 1: cobadeh.xyz
     try {
-      // 🔥 API baru (lebih stabil)
-      const api = `https://api.dlmp3.xyz/api/download?url=https://www.youtube.com/watch?v=${video.videoId}`
+      const r1 = await axios.get(
+        `https://api.cobadeh.xyz/ytdl/mp3?url=${encodeURIComponent(ytUrl)}`,
+        { timeout: 20000 }
+      )
+      audioUrl = r1.data?.download || r1.data?.url || r1.data?.link
+    } catch {}
 
-      const res = await axios.get(api)
+    // API 2: yt-download.org
+    if (!audioUrl) {
+      try {
+        const r2 = await axios.get(
+          `https://www.yt-download.org/api/button/mp3/${video.videoId}`,
+          { timeout: 20000 }
+        )
+        const match = r2.data?.match?.(/href="(https?:\/\/[^"]+\.mp3[^"]*)"/)
+        if (match) audioUrl = match[1]
+      } catch {}
+    }
 
-      if (!res.data || !res.data.download) {
-        throw new Error("API gagal")
-      }
+    // API 3: loader.to
+    if (!audioUrl) {
+      try {
+        const r3 = await axios.get(
+          `https://loader.to/api/button/?url=${encodeURIComponent(ytUrl)}&f=mp3`,
+          { timeout: 20000 }
+        )
+        audioUrl = r3.data?.url
+      } catch {}
+    }
 
-      const url = res.data.download
+    if (!audioUrl) {
+      return sock.sendMessage(from, {
+        text: `❌ Gagal download: *${video.title}*\nServer API lagi down, coba lagi nanti`
+      })
+    }
 
+    try {
       await sock.sendMessage(from, {
-        audio: { url },
+        audio: { url: audioUrl },
         mimetype: "audio/mpeg",
         fileName: video.title + ".mp3"
       })
-
     } catch (err) {
-      console.log("DOWNLOAD ERROR:", err.message)
-
+      console.log("PLAY SEND ERROR:", err.message)
       await sock.sendMessage(from, {
-        text: "❌ Gagal download lagu (server API lagi down)"
+        text: `❌ Gagal kirim audio\n${err.message}`
       })
     }
   }

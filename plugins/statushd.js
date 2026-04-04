@@ -32,53 +32,76 @@ module.exports = {
         buffer = Buffer.concat([buffer, chunk])
       }
 
-      // ===== SAVE TEMP =====
-      // Beri nama unik agar tidak bentrok jika banyak request
-      const timestamp = Date.now()
-      const inputPath = path.join(__dirname, `../temp_input_${timestamp}.mp4`)
-      const outputPath = path.join(__dirname, `../temp_output_${timestamp}.mp4`)
+      if (!buffer || buffer.length < 1000) {
+        throw new Error("Video kosong atau gagal didownload")
+      }
 
-      fs.writeFileSync(inputPath, buffer)
-
-      // ===== RE-ENCODE — tanda kutip path agar aman =====
-      await new Promise((resolve, reject) => {
-        exec(
-          `ffmpeg -y -i "${inputPath}" -vcodec libx264 -acodec aac -preset fast -crf 28 "${outputPath}"`,
-          { timeout: 60000 },
-          (err) => {
-            if (err) reject(err)
-            else resolve()
-          }
-        )
+      // ===== CEK APAKAH FFMPEG TERSEDIA =====
+      const hasFfmpeg = await new Promise(resolve => {
+        exec("ffmpeg -version", { timeout: 5000 }, (err) => resolve(!err))
       })
 
-      const fixedBuffer = fs.readFileSync(outputPath)
+      let finalBuffer = buffer
+
+      if (hasFfmpeg) {
+        // ===== SAVE TEMP & RE-ENCODE =====
+        const timestamp = Date.now()
+        const inputPath = path.join(__dirname, `../temp_input_${timestamp}.mp4`)
+        const outputPath = path.join(__dirname, `../temp_output_${timestamp}.mp4`)
+
+        fs.writeFileSync(inputPath, buffer)
+
+        try {
+          await new Promise((resolve, reject) => {
+            exec(
+              `ffmpeg -y -i "${inputPath}" -vcodec libx264 -acodec aac -preset fast -crf 28 "${outputPath}"`,
+              { timeout: 60000 },
+              (err) => {
+                if (err) reject(err)
+                else resolve()
+              }
+            )
+          })
+
+          if (fs.existsSync(outputPath)) {
+            finalBuffer = fs.readFileSync(outputPath)
+          }
+        } catch (ffErr) {
+          console.log("FFMPEG ERROR:", ffErr.message, "— kirim video asli")
+        }
+
+        // CLEANUP
+        if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+      } else {
+        console.log("[STATUSHD] ffmpeg tidak tersedia, kirim video langsung")
+      }
 
       // ===== KIRIM KE STATUS =====
-      await sock.sendMessage("status@broadcast", {
-        video: fixedBuffer,
-        caption: "✨ HD Status"
-      })
+      try {
+        await sock.sendMessage("status@broadcast", {
+          video: finalBuffer,
+          caption: "✨ HD Status"
+        })
+      } catch (e) {
+        console.log("Gagal kirim ke status:", e.message)
+      }
 
       // ===== KIRIM KE USER =====
       await sock.sendMessage(from, {
-        video: fixedBuffer,
+        video: finalBuffer,
         caption: "🎥 Video siap jadi status"
       })
 
       await sock.sendMessage(from, {
-        text: "✅ Status berhasil di upload"
+        text: "✅ Status berhasil diproses"
       })
-
-      // ===== CLEANUP =====
-      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
-      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
 
     } catch (err) {
       console.log("STATUS ERROR:", err)
 
       await sock.sendMessage(from, {
-        text: "❌ Gagal upload status\nPastikan ffmpeg terinstall di server"
+        text: "❌ Gagal memproses video"
       })
     }
   }
