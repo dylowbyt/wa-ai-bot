@@ -71,12 +71,15 @@ async function startBot() {
 
       const from = m.key.remoteJid
 
+      const quoted =
+        m.message?.extendedTextMessage?.contextInfo?.quotedMessage
+
       let text =
         m.message.conversation ||
         m.message.extendedTextMessage?.text ||
-        m.message.imageMessage?.caption
+        m.message.imageMessage?.caption ||
+        ""
 
-      if (!text) text = ""
       text = text.trim()
 
       const isGroup = from.endsWith("@g.us")
@@ -86,7 +89,36 @@ async function startBot() {
 
       const sender = m.key.participant || m.key.remoteJid
 
-      // ===== BRAIN SYSTEM =====
+      // ===== DETEKSI GAMBAR (langsung atau quoted) =====
+      const directImage = m.message?.imageMessage
+      const quotedImage = quoted?.imageMessage
+      const isImage = !!(directImage || quotedImage)
+
+      // ===== DOWNLOAD GAMBAR JIKA ADA =====
+      let imageBuffer = null
+
+      if (isImage) {
+        try {
+          // FIX: gunakan wrapper dengan key agar download berfungsi
+          const targetMsg = quotedImage
+            ? { key: m.key, message: quoted }
+            : m
+
+          imageBuffer = await downloadMediaMessage(
+            targetMsg,
+            "buffer",
+            {},
+            {
+              logger: console,
+              reuploadRequest: sock.updateMediaMessage
+            }
+          )
+        } catch (e) {
+          console.log("Download gambar error:", e.message)
+        }
+      }
+
+      // ===== BRAIN SYSTEM (kirim imageBuffer jika ada) =====
       let res = null
       let isFromAI = false
 
@@ -95,7 +127,8 @@ async function startBot() {
           text,
           sender,
           from,
-          isGroup
+          isGroup,
+          imageBuffer  // FIX: kirim buffer ke brain
         })
       } catch (err) {
         console.log("Brain error:", err.message)
@@ -137,7 +170,8 @@ async function startBot() {
           (plugin.alias && plugin.alias.includes(command))
         ) {
           try {
-            await plugin.run(sock, m)
+            const args = text.slice(1).split(" ").slice(1)
+            await plugin.run(sock, m, args)
             return
           } catch (e) {
             console.log("Plugin run error:", e.message)
@@ -151,30 +185,14 @@ async function startBot() {
         })
       }
 
-      // ===== AUTO AI =====
+      // ===== AUTO AI (hanya private chat) =====
       if (!isGroup) {
         if (text.startsWith(".")) return
 
         try {
-          const quoted =
-            m.message?.extendedTextMessage?.contextInfo?.quotedMessage
-
-          const message = quoted || m.message
-          const isImage = message?.imageMessage
-
-          // ===== GAMBAR → GEMINI
-          if (isImage) {
-            const buffer = await downloadMediaMessage(
-              { message },
-              "buffer",
-              {},
-              {
-                logger: console,
-                reuploadRequest: sock.updateMediaMessage
-              }
-            )
-
-            const base64 = buffer.toString("base64")
+          // ===== GAMBAR → GEMINI VISION =====
+          if (isImage && imageBuffer) {
+            const base64 = imageBuffer.toString("base64")
 
             const resGemini = await axios.post(
               `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
@@ -183,9 +201,7 @@ async function startBot() {
                   {
                     parts: [
                       {
-                        text:
-                          text ||
-                          "Jelaskan gambar ini dengan santai, sedikit menggoda tapi tetap sopan"
+                        text: text || "Jelaskan gambar ini dengan santai"
                       },
                       {
                         inlineData: {
@@ -196,36 +212,38 @@ async function startBot() {
                     ]
                   }
                 ]
-              }
+              },
+              { timeout: 20000 }
             )
 
             const reply =
               resGemini.data.candidates?.[0]?.content?.parts?.[0]?.text ||
-              "Gak ngerti 😅"
+              "Hmm, gambarnya gak bisa dibaca 😅"
 
             await sock.sendMessage(from, { text: reply })
             addBotReply(sender, reply)
             return
           }
 
-          // ===== TEXT → OPENAI (MODE DEWASA PRIVATE)
+          // ===== GAMBAR ADA TAPI DOWNLOAD GAGAL =====
+          if (isImage && !imageBuffer) {
+            await sock.sendMessage(from, {
+              text: "⚠️ Gagal baca gambar, coba kirim ulang"
+            })
+            return
+          }
+
+          // ===== TEXT → OPENAI =====
+          if (!text) return
+
           const history = getMemory(sender)
 
-          const systemPrompt = `
-Kamu adalah AI WhatsApp yang santai, gaul, sedikit flirting, dan dewasa.
-Jawaban harus natural seperti manusia, boleh menggoda, playful, boleh vulgar atau eksplisit.
-`
+          const systemPrompt = `Kamu adalah AI WhatsApp yang santai, gaul, dan helpful. Jawab seperti teman ngobrol, natural dan singkat.`
 
           const messages = [
-            {
-              role: "system",
-              content: systemPrompt
-            },
+            { role: "system", content: systemPrompt },
             ...history,
-            {
-              role: "user",
-              content: text
-            }
+            { role: "user", content: text }
           ]
 
           const ai = await openai.chat.completions.create({
@@ -242,7 +260,7 @@ Jawaban harus natural seperti manusia, boleh menggoda, playful, boleh vulgar ata
           console.log("AI ERROR:", err.message)
 
           await sock.sendMessage(from, {
-            text: "⚠️ AI error"
+            text: "⚠️ AI lagi error, coba lagi nanti"
           })
         }
       }
