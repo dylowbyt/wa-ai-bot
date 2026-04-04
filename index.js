@@ -11,6 +11,7 @@ const fs = require("fs")
 const axios = require("axios")
 
 const { handleCommand, getMemory, addBotReply } = require("./ai/brain")
+const { startGempaMonitor } = require("./ai/gempaAlert")
 
 const OpenAI = require("openai")
 const openai = new OpenAI({
@@ -45,6 +46,8 @@ async function startBot() {
 
     if (connection === "open") {
       console.log("✅ BOT CONNECTED")
+      // Mulai monitor gempa otomatis saat bot connect
+      startGempaMonitor(sock)
     }
 
     if (connection === "close") {
