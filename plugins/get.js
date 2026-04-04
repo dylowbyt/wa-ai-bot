@@ -16,39 +16,52 @@ module.exports = {
 
     try {
       await sock.sendMessage(from, {
-        text: "🔎 Mencari link..."
+        text: "🔎 Mencari link download..."
       })
 
-      // ===== SEARCH
+      // ===== FIX: Gunakan DuckDuckGo dengan header browser agar tidak diblok =====
       const res = await axios.get(
-        `https://duckduckgo.com/html/?q=${encodeURIComponent(query + " download")}`
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + " download")}`,
+        {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "id-ID,id;q=0.9,en;q=0.8"
+          },
+          timeout: 15000
+        }
       )
 
       const html = res.data
 
-      const links = [...html.matchAll(/uddg=(https[^&"]+)/g)]
-        .map(v => decodeURIComponent(v[1]))
+      // ===== FIX: Perbaiki regex agar cocok dengan format DuckDuckGo terbaru =====
+      const rawLinks = [
+        ...(html.matchAll(/uddg=(https[^&"]+)/g) || []),
+        ...(html.matchAll(/href="(https:\/\/(?:www\.)?(?:mediafire|drive\.google|mega\.nz|dropbox|1fichier)[^"]+)"/g) || [])
+      ].map(v => {
+        try { return decodeURIComponent(v[1]) } catch { return v[1] }
+      })
 
       const allowedSites = [
-        "mediafire",
-        "drive.google",
+        "mediafire.com",
+        "drive.google.com",
         "mega.nz",
-        "1file",
-        "dropbox"
+        "1fichier.com",
+        "dropbox.com"
       ]
 
-      const candidates = links.filter(link =>
-        allowedSites.some(site => link.includes(site))
-      ).slice(0, 5)
+      const candidates = [...new Set(rawLinks)]
+        .filter(link => allowedSites.some(site => link.includes(site)))
+        .slice(0, 5)
 
       if (!candidates.length) {
         return sock.sendMessage(from, {
-          text: "❌ Tidak ada link valid"
+          text: `❌ Tidak ada link download ditemukan untuk:\n*${query}*\n\nCoba kata kunci yang lebih spesifik`
         })
       }
 
       await sock.sendMessage(from, {
-        text: `✅ ${candidates.length} link ditemukan, mencoba...`
+        text: `✅ ${candidates.length} link ditemukan, mencoba download...`
       })
 
       for (let i = 0; i < candidates.length; i++) {
@@ -56,11 +69,10 @@ module.exports = {
 
         try {
           await sock.sendMessage(from, {
-            text: `⏳ (${i + 1}/${candidates.length})\n${url}`
+            text: `⏳ Mencoba (${i + 1}/${candidates.length})\n${url}`
           })
 
           const direct = await bypass(url)
-
           const ok = await download(sock, from, direct)
 
           if (ok) {
@@ -70,16 +82,20 @@ module.exports = {
             return
           }
 
-        } catch (e) {}
+        } catch (e) {
+          console.log("GET bypass error:", e?.message)
+        }
       }
 
+      // Kalau semua gagal download, kirim daftar linknya saja
+      const linkList = candidates.map((l, i) => `${i + 1}. ${l}`).join("\n")
       await sock.sendMessage(from, {
-        text: "❌ Semua link gagal"
+        text: `⚠️ Tidak bisa auto-download, ini linknya:\n\n${linkList}`
       })
 
     } catch (err) {
-      console.log(err)
-      sock.sendMessage(from, { text: "❌ Error" })
+      console.log("GET ERROR:", err?.message)
+      sock.sendMessage(from, { text: "❌ Gagal mencari link" })
     }
   }
 }
@@ -87,17 +103,22 @@ module.exports = {
 // ================= BYPASS =================
 async function bypass(url) {
   // ===== MEDIAFIRE
-  if (url.includes("mediafire")) {
-    const res = await axios.get(url)
-    const match = res.data.match(/href="(https:\/\/download[^"]+)"/)
-    if (match) return match[1]
+  if (url.includes("mediafire.com")) {
+    try {
+      const res = await axios.get(url, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        timeout: 10000
+      })
+      const match = res.data.match(/href="(https:\/\/download[^"]+mediafire[^"]+)"/)
+      if (match) return match[1]
+    } catch {}
   }
 
   // ===== GOOGLE DRIVE
-  if (url.includes("drive.google")) {
+  if (url.includes("drive.google.com")) {
     const idMatch = url.match(/\/d\/(.*?)\//)
     if (idMatch) {
-      return `https://drive.google.com/uc?export=download&id=${idMatch[1]}`
+      return `https://drive.google.com/uc?export=download&id=${idMatch[1]}&confirm=t`
     }
   }
 
@@ -111,25 +132,22 @@ async function download(sock, from, url) {
       responseType: "arraybuffer",
       headers: { "User-Agent": "Mozilla/5.0" },
       maxRedirects: 5,
-      timeout: 30000
+      timeout: 45000
     })
 
     const buffer = Buffer.from(res.data)
     const type = res.headers["content-type"] || ""
 
-    // IMAGE
     if (type.includes("image")) {
       await sock.sendMessage(from, { image: buffer })
       return true
     }
 
-    // VIDEO
     if (type.includes("video")) {
       await sock.sendMessage(from, { video: buffer })
       return true
     }
 
-    // AUDIO
     if (type.includes("audio")) {
       await sock.sendMessage(from, {
         audio: buffer,
@@ -138,10 +156,17 @@ async function download(sock, from, url) {
       return true
     }
 
-    // FILE
+    if (type.includes("html") || type.includes("text")) {
+      return false // Bukan file, mungkin halaman web
+    }
+
+    // Ambil nama file dari URL
+    const fileName = url.split("/").pop().split("?")[0] || "downloaded_file"
+
     await sock.sendMessage(from, {
       document: buffer,
-      fileName: "downloaded_file"
+      fileName,
+      mimetype: type || "application/octet-stream"
     })
 
     return true

@@ -15,9 +15,11 @@ module.exports = {
       const quoted =
         m.message?.extendedTextMessage?.contextInfo?.quotedMessage
 
-      const message = quoted || m.message
+      const hasImage =
+        m.message?.imageMessage ||
+        quoted?.imageMessage
 
-      if (!message.imageMessage) {
+      if (!hasImage) {
         return sock.sendMessage(from, {
           text: "⚠️ Reply foto dengan .memeai"
         })
@@ -27,9 +29,13 @@ module.exports = {
         text: "🧠 AI lagi mikir meme..."
       })
 
-      // ===== DOWNLOAD FOTO
+      // ===== FIX: bungkus dengan key agar downloadMediaMessage bisa kerja =====
+      const targetMsg = quoted
+        ? { key: m.key, message: quoted }
+        : m
+
       const buffer = await downloadMediaMessage(
-        { message },
+        targetMsg,
         "buffer",
         {},
         {
@@ -40,7 +46,7 @@ module.exports = {
 
       const base64 = buffer.toString("base64")
 
-      // ===== GEMINI VISION (LIHAT GAMBAR)
+      // ===== GEMINI VISION =====
       const gemini = await axios.post(
         `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
@@ -59,42 +65,50 @@ module.exports = {
               ]
             }
           ]
-        }
+        },
+        { timeout: 20000 }
       )
 
       let text = gemini.data.candidates?.[0]?.content?.parts?.[0]?.text || ""
 
-      // parsing atas|bawah
-      let [top, bottom] = text.split("|")
+      // Bersihkan dari karakter markdown
+      text = text.replace(/\*/g, "").trim()
+
+      let [top, bottom] = text.split("|").map(s => s.trim())
 
       if (!top || !bottom) {
         top = "Ketika hidup..."
         bottom = "ya begitulah"
       }
 
-      // ===== UPLOAD FOTO
+      // ===== UPLOAD FOTO ke 0x0.st =====
       const form = new FormData()
-      form.append("file", buffer, "image.jpg")
+      form.append("file", buffer, { filename: "image.jpg", contentType: "image/jpeg" })
 
       const upload = await axios.post("https://0x0.st", form, {
-        headers: form.getHeaders()
+        headers: form.getHeaders(),
+        timeout: 30000
       })
 
       const imageUrl = upload.data.trim()
 
-      // ===== GENERATE MEME
+      if (!imageUrl.startsWith("http")) {
+        throw new Error("Upload gagal: " + imageUrl)
+      }
+
+      // ===== GENERATE MEME =====
       const memeUrl = `https://api.popcat.xyz/meme?image=${encodeURIComponent(imageUrl)}&top=${encodeURIComponent(top)}&bottom=${encodeURIComponent(bottom)}`
 
       await sock.sendMessage(from, {
         image: { url: memeUrl },
-        caption: "😂 Meme AI (fresh)"
+        caption: `😂 *${top}*\n_${bottom}_`
       })
 
     } catch (err) {
-      console.log("MEMEAI ERROR:", err)
+      console.log("MEMEAI ERROR:", err?.message || err)
 
       await sock.sendMessage(from, {
-        text: "❌ Gagal bikin meme AI"
+        text: "❌ Gagal bikin meme AI\nPastikan GEMINI_API_KEY sudah diset"
       })
     }
   }

@@ -24,11 +24,15 @@ module.exports = {
         })
       }
 
-      const msg = quoted ? { message: quoted } : m
+      await sock.sendMessage(from, { text: "⏳ Mengonversi foto ke video..." })
 
-      // ===== DOWNLOAD FOTO
+      // ===== FIX: tambahkan key agar downloadMediaMessage bekerja =====
+      const targetMsg = quoted
+        ? { key: m.key, message: quoted }
+        : m
+
       const buffer = await downloadMediaMessage(
-        msg,
+        targetMsg,
         "buffer",
         {},
         {
@@ -37,15 +41,18 @@ module.exports = {
         }
       )
 
-      const inputPath = path.join(__dirname, "../ptv_input.jpg")
-      const outputPath = path.join(__dirname, "../ptv_output.mp4")
+      // ===== SAVE dengan nama unik =====
+      const timestamp = Date.now()
+      const inputPath = path.join(__dirname, `../ptv_input_${timestamp}.jpg`)
+      const outputPath = path.join(__dirname, `../ptv_output_${timestamp}.mp4`)
 
       fs.writeFileSync(inputPath, buffer)
 
-      // ===== CONVERT KE VIDEO
+      // ===== FIX: Tambah -y (overwrite), kutip path, dan sederhanakan filter agar lebih stabil =====
       await new Promise((resolve, reject) => {
         exec(
-          `ffmpeg -y -loop 1 -i ${inputPath} -vf "zoompan=z='min(zoom+0.002,1.5)':d=125" -t 5 -s 720x1280 -c:v libx264 -pix_fmt yuv420p ${outputPath}`,
+          `ffmpeg -y -loop 1 -i "${inputPath}" -vf "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2" -t 5 -c:v libx264 -pix_fmt yuv420p -r 24 "${outputPath}"`,
+          { timeout: 60000 },
           (err) => {
             if (err) reject(err)
             else resolve()
@@ -60,15 +67,15 @@ module.exports = {
         caption: "🎥 Foto jadi video"
       })
 
-      // ===== CLEANUP
-      fs.unlinkSync(inputPath)
-      fs.unlinkSync(outputPath)
+      // ===== CLEANUP =====
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
 
     } catch (err) {
-      console.log("PTV ERROR:", err)
+      console.log("PTV ERROR:", err?.message)
 
       await sock.sendMessage(from, {
-        text: "❌ Gagal convert foto ke video"
+        text: "❌ Gagal convert foto ke video\nPastikan ffmpeg terinstall"
       })
     }
   }

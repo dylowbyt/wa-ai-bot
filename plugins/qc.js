@@ -9,20 +9,24 @@ module.exports = {
 
     if (!text) {
       return sock.sendMessage(from, {
-        text: "⚠️ Contoh:\n.qc halo"
+        text: "⚠️ Contoh:\n.qc Hidup itu indah kalau kamu bahagia"
       })
     }
 
     try {
-      const url = `https://api.popcat.xyz/quote?text=${encodeURIComponent(text)}`
+      // Batasi panjang teks agar API tidak error
+      const safeText = text.slice(0, 200)
+
+      const url = `https://api.popcat.xyz/quote?text=${encodeURIComponent(safeText)}`
 
       await sock.sendMessage(from, {
         image: { url },
-        caption: "📝 Quote"
+        caption: `📝 *${safeText}*`
       })
 
-    } catch {
-      sock.sendMessage(from, { text: "❌ Gagal buat quote" })
+    } catch (err) {
+      console.log("QC ERROR:", err?.message)
+      sock.sendMessage(from, { text: "❌ Gagal buat quote, coba lagi nanti" })
     }
   }
 }

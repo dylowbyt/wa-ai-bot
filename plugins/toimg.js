@@ -11,7 +11,7 @@ module.exports = {
         m.message?.extendedTextMessage?.contextInfo?.quotedMessage
 
       const isSticker =
-        m.message.stickerMessage ||
+        m.message?.stickerMessage ||
         quoted?.stickerMessage
 
       if (!isSticker) {
@@ -20,10 +20,15 @@ module.exports = {
         })
       }
 
-      const msg = quoted ? { message: quoted } : m
+      await sock.sendMessage(from, { text: "⏳ Mengonversi sticker..." })
+
+      // ===== FIX: tambahkan key agar downloadMediaMessage bekerja =====
+      const targetMsg = quoted
+        ? { key: m.key, message: quoted }
+        : m
 
       const buffer = await downloadMediaMessage(
-        msg,
+        targetMsg,
         "buffer",
         {},
         {
@@ -32,13 +37,16 @@ module.exports = {
         }
       )
 
+      // Sticker adalah format WebP, kirim sebagai image WebP
       await sock.sendMessage(from, {
         image: buffer,
+        mimetype: "image/webp",
         caption: "🖼️ Sticker jadi foto"
       })
 
-    } catch (e) {
-      sock.sendMessage(from, { text: "❌ Gagal convert" })
+    } catch (err) {
+      console.log("TOIMG ERROR:", err?.message)
+      sock.sendMessage(from, { text: "❌ Gagal convert sticker ke foto" })
     }
   }
 }
