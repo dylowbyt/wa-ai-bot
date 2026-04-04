@@ -1,44 +1,80 @@
 const memory = {}
 
-async function handleCommand({ text, sender, imageBuffer }) {
-  text = text.toLowerCase()
+// FIX: Terima imageBuffer dari index.js
+async function handleCommand({ text, sender, from, isGroup, imageBuffer }) {
+  const lowerText = (text || "").toLowerCase()
 
   if (!memory[sender]) memory[sender] = []
 
-  memory[sender].push({ role: "user", content: text })
-
-  if (memory[sender].length > 5) {
-    memory[sender].shift()
+  // Simpan pesan user ke memori (hanya kalau ada teks)
+  if (lowerText) {
+    memory[sender].push({ role: "user", content: lowerText })
+    if (memory[sender].length > 10) {
+      memory[sender].shift()
+    }
   }
 
-  // 🔥 AUTO DOWNLOAD LAGU
+  // ===== AUTO DOWNLOAD LAGU =====
   if (
-    text.includes("download lagu") ||
-    text.includes("putar lagu") ||
-    text.includes("play lagu")
+    lowerText.includes("download lagu") ||
+    lowerText.includes("putar lagu") ||
+    lowerText.includes("play lagu")
   ) {
-    const query = text
+    const query = lowerText
       .replace("download lagu", "")
       .replace("putar lagu", "")
       .replace("play lagu", "")
       .trim()
 
-    return ".play " + query
+    if (query) return ".play " + query
   }
 
-  // fitur lama tetap aman
+  // ===== AUTO DOWNLOAD TIKTOK =====
+  if (lowerText.includes("tiktok.com") || lowerText.includes("vt.tiktok")) {
+    const urlMatch = text.match(/https?:\/\/[^\s]+tiktok[^\s]+/)
+    if (urlMatch) return ".tt " + urlMatch[0]
+  }
+
+  // ===== TRIGGER ANALISIS GAMBAR JIKA ADA imageBuffer =====
+  // Brain mengembalikan null agar index.js yang handle pakai Gemini
+  // Tapi kita bisa intercept di sini kalau butuh routing khusus
   if (imageBuffer) {
-    return await visionMode(text, imageBuffer)
+    // Contoh: kalau user minta "buat meme dari foto ini"
+    if (lowerText.includes("meme")) {
+      return ".memeai"
+    }
+
+    // Kalau user minta jadiin URL
+    if (lowerText.includes("tourl") || lowerText.includes("upload link")) {
+      return ".tourl"
+    }
+
+    // Selain itu, biarkan index.js kirim ke Gemini Vision
+    return null
   }
 
-  if (text.includes("buat fitur") || text.includes("coding")) {
+  // ===== TRIGGER CODING MODE =====
+  if (lowerText.includes("buat fitur") || lowerText.includes("coding")) {
     return await codingMode(text)
   }
 
-  if (text.includes("harga") || text.includes("berapa")) {
+  // ===== TRIGGER ANALISIS HARGA =====
+  if (lowerText.includes("harga") || lowerText.includes("berapa harga")) {
     return await analyzeMode(text)
   }
 
+  return null
+}
+
+// ===== CODING MODE =====
+async function codingMode(text) {
+  // Placeholder — bisa dihubungkan ke OpenAI/Gemini
+  return null
+}
+
+// ===== ANALYZE MODE =====
+async function analyzeMode(text) {
+  // Placeholder — bisa dihubungkan ke OpenAI/Gemini
   return null
 }
 
@@ -51,7 +87,7 @@ function addBotReply(sender, reply) {
 
   memory[sender].push({ role: "assistant", content: reply })
 
-  if (memory[sender].length > 5) {
+  if (memory[sender].length > 10) {
     memory[sender].shift()
   }
 }
