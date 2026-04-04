@@ -1,8 +1,9 @@
-const { downloadContentFromMessage } = require("@whiskeysockets/baileys")
+const { downloadMediaMessage } = require("@whiskeysockets/baileys")
+const sharp = require("sharp")
 
 module.exports = {
   name: "sticker",
-  alias: ["s"],
+  alias: ["s", "stiker", "stickers"],
 
   async run(sock, m) {
     const from = m.key.remoteJid
@@ -11,26 +12,39 @@ module.exports = {
       const quoted =
         m.message?.extendedTextMessage?.contextInfo?.quotedMessage
 
-      const message = quoted || m.message
-      const image = message.imageMessage
+      const isImage =
+        m.message.imageMessage ||
+        quoted?.imageMessage
 
-      if (!image) {
+      if (!isImage) {
         return sock.sendMessage(from, {
           text: "⚠️ Kirim / reply gambar dengan .s"
         })
       }
 
-      // download
-      const stream = await downloadContentFromMessage(image, "image")
+      const msg = quoted ? { message: quoted } : m
 
-      let buffer = Buffer.from([])
-      for await (const chunk of stream) {
-        buffer = Buffer.concat([buffer, chunk])
-      }
+      const buffer = await downloadMediaMessage(
+        msg,
+        "buffer",
+        {},
+        {
+          logger: console,
+          reuploadRequest: sock.updateMediaMessage
+        }
+      )
 
-      // kirim sticker
+      // 🔥 CONVERT KE WEBP (WA FORMAT)
+      const webp = await sharp(buffer)
+        .resize(512, 512, {
+          fit: "contain",
+          background: { r: 0, g: 0, b: 0, alpha: 0 }
+        })
+        .webp()
+        .toBuffer()
+
       await sock.sendMessage(from, {
-        sticker: buffer
+        sticker: webp
       })
 
     } catch (err) {
