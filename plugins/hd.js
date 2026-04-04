@@ -13,12 +13,12 @@ module.exports = {
         m.message?.extendedTextMessage?.contextInfo?.quotedMessage
 
       const isImage =
-        m.message.imageMessage ||
+        m.message?.imageMessage ||
         quoted?.imageMessage
 
       if (!isImage) {
         return sock.sendMessage(from, {
-          text: "⚠️ Kirim / reply foto dengan .hd"
+          text: "⚠️ Kirim atau reply foto dengan .hd"
         })
       }
 
@@ -34,27 +34,53 @@ module.exports = {
         }
       )
 
-      // 🔥 PROSES HD (UPSCALE + SHARPEN)
-      const result = await sharp(buffer)
+      // 🔥 VALIDASI BUFFER
+      if (!buffer || buffer.length < 1000) {
+        throw new Error("Gambar rusak / terlalu kecil")
+      }
+
+      // 🔥 PROCESS HD (LEBIH HALUS)
+      let image = sharp(buffer)
+
+      const metadata = await image.metadata()
+
+      // upscale max 2x biar gak pecah
+      const width = metadata.width
+      const height = metadata.height
+
+      const upscaleWidth = width < 1000 ? width * 2 : width
+
+      const result = await image
         .resize({
-          width: 1024, // upscale
+          width: upscaleWidth,
           withoutEnlargement: false
         })
-        .sharpen() // tajamkan
-        .normalize() // warna lebih hidup
-        .jpeg({ quality: 90 }) // kualitas tinggi
+        .modulate({
+          brightness: 1.05,
+          saturation: 1.2
+        })
+        .sharpen({
+          sigma: 1.2,
+          m1: 1,
+          m2: 2
+        })
+        .normalize()
+        .jpeg({
+          quality: 95,
+          chromaSubsampling: "4:4:4"
+        })
         .toBuffer()
 
       await sock.sendMessage(from, {
         image: result,
-        caption: "✨ Foto berhasil di-HD (offline)"
+        caption: "✨ HD berhasil (AI Enhance Offline)"
       })
 
     } catch (err) {
       console.log("HD ERROR:", err)
 
       await sock.sendMessage(from, {
-        text: "❌ Gagal HD"
+        text: "❌ Gagal proses HD, coba foto lain"
       })
     }
   }
