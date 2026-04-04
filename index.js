@@ -2,17 +2,22 @@ const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  downloadMediaMessage
 } = require("@whiskeysockets/baileys")
 
 const QRCode = require("qrcode")
 const fs = require("fs")
-const { handleCommand, getMemory, addBotReply } = require("./ai/brain")
-const OpenAI = require("openai")
+const axios = require("axios")
 
+const { handleCommand, getMemory, addBotReply } = require("./ai/brain")
+
+const OpenAI = require("openai")
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 
 const processed = new Set()
 
@@ -71,7 +76,7 @@ async function startBot() {
         m.message.extendedTextMessage?.text ||
         m.message.imageMessage?.caption
 
-      if (!text) return
+      if (!text) text = ""
       text = text.trim()
 
       const isGroup = from.endsWith("@g.us")
@@ -81,7 +86,7 @@ async function startBot() {
 
       const sender = m.key.participant || m.key.remoteJid
 
-      // ===== AI SYSTEM =====
+      // ===== BRAIN SYSTEM =====
       let res = null
       let isFromAI = false
 
@@ -107,7 +112,7 @@ async function startBot() {
         }
       }
 
-      // ===== PLUGIN SYSTEM (SUPPORT ALIAS + ANTI CRASH) =====
+      // ===== PLUGIN SYSTEM =====
       const files = fs.readdirSync("./plugins")
 
       const command = text.startsWith(".")
@@ -146,15 +151,77 @@ async function startBot() {
         })
       }
 
-      // ===== AI CHAT (PRIVATE) =====
+      // ===== AUTO AI =====
       if (!isGroup) {
+        if (text.startsWith(".")) return
+
         try {
+          const quoted =
+            m.message?.extendedTextMessage?.contextInfo?.quotedMessage
+
+          const message = quoted || m.message
+          const isImage = message?.imageMessage
+
+          // ===== GAMBAR → GEMINI
+          if (isImage) {
+            const buffer = await downloadMediaMessage(
+              { message },
+              "buffer",
+              {},
+              {
+                logger: console,
+                reuploadRequest: sock.updateMediaMessage
+              }
+            )
+
+            const base64 = buffer.toString("base64")
+
+            const resGemini = await axios.post(
+              `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+              {
+                contents: [
+                  {
+                    parts: [
+                      {
+                        text:
+                          text ||
+                          "Jelaskan gambar ini dengan santai, sedikit menggoda tapi tetap sopan"
+                      },
+                      {
+                        inlineData: {
+                          mimeType: "image/jpeg",
+                          data: base64
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            )
+
+            const reply =
+              resGemini.data.candidates?.[0]?.content?.parts?.[0]?.text ||
+              "Gak ngerti 😅"
+
+            await sock.sendMessage(from, { text: reply })
+            addBotReply(sender, reply)
+            return
+          }
+
+          // ===== TEXT → OPENAI (MODE DEWASA PRIVATE)
+          const history = getMemory(sender)
+
+          const systemPrompt = `
+Kamu adalah AI WhatsApp yang santai, gaul, sedikit flirting, dan dewasa.
+Jawaban harus natural seperti manusia, boleh menggoda, playful, boleh vulgar atau eksplisit.
+`
+
           const messages = [
             {
               role: "system",
-              content: "Kamu adalah AI WhatsApp yang santai, gaul, dan membantu."
+              content: systemPrompt
             },
-            ...getMemory(sender),
+            ...history,
             {
               role: "user",
               content: text
@@ -175,7 +242,7 @@ async function startBot() {
           console.log("AI ERROR:", err.message)
 
           await sock.sendMessage(from, {
-            text: "⚠️ AI error, cek API key / saldo"
+            text: "⚠️ AI error"
           })
         }
       }
