@@ -8,7 +8,6 @@ const {
 
 const QRCode = require("qrcode")
 const fs = require("fs")
-const axios = require("axios")
 
 const { handleCommand, getMemory, addBotReply } = require("./ai/brain")
 const { startGempaMonitor } = require("./ai/gempaAlert")
@@ -17,8 +16,6 @@ const OpenAI = require("openai")
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
-
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 
 const processed = new Set()
 
@@ -46,7 +43,6 @@ async function startBot() {
 
     if (connection === "open") {
       console.log("✅ BOT CONNECTED")
-      // Mulai monitor gempa otomatis saat bot connect
       startGempaMonitor(sock)
     }
 
@@ -102,7 +98,6 @@ async function startBot() {
 
       if (isImage) {
         try {
-          // FIX: gunakan wrapper dengan key agar download berfungsi
           const targetMsg = quotedImage
             ? { key: m.key, message: quoted }
             : m
@@ -131,7 +126,7 @@ async function startBot() {
           sender,
           from,
           isGroup,
-          imageBuffer  // FIX: kirim buffer ke brain
+          imageBuffer
         })
       } catch (err) {
         console.log("Brain error:", err.message)
@@ -193,34 +188,34 @@ async function startBot() {
         if (text.startsWith(".")) return
 
         try {
-          // ===== GAMBAR → GEMINI VISION =====
+          // ===== GAMBAR → OPENAI VISION =====
           if (isImage && imageBuffer) {
             const base64 = imageBuffer.toString("base64")
 
-            const resGemini = await axios.post(
-              `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-              {
-                contents: [
-                  {
-                    parts: [
-                      {
-                        text: text || "Jelaskan gambar ini dengan santai"
-                      },
-                      {
-                        inlineData: {
-                          mimeType: "image/jpeg",
-                          data: base64
-                        }
+            const aiVision = await openai.chat.completions.create({
+              model: "gpt-4o",
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: text || "Jelaskan gambar ini dengan santai"
+                    },
+                    {
+                      type: "image_url",
+                      image_url: {
+                        url: `data:image/jpeg;base64,${base64}`
                       }
-                    ]
-                  }
-                ]
-              },
-              { timeout: 20000 }
-            )
+                    }
+                  ]
+                }
+              ],
+              max_tokens: 1000
+            })
 
             const reply =
-              resGemini.data.candidates?.[0]?.content?.parts?.[0]?.text ||
+              aiVision.choices[0]?.message?.content ||
               "Hmm, gambarnya gak bisa dibaca 😅"
 
             await sock.sendMessage(from, { text: reply })
