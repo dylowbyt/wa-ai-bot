@@ -1,3 +1,5 @@
+require("dotenv").config()
+
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -9,6 +11,7 @@ const {
 const QRCode = require("qrcode")
 const fs = require("fs")
 const axios = require("axios")
+const path = require("path")
 
 const {
   handleCommand,
@@ -25,6 +28,11 @@ const openai = new OpenAI({
 })
 
 const processed = new Set()
+
+// Pastikan folder plugins ada
+if (!fs.existsSync("./plugins")) {
+  fs.mkdirSync("./plugins", { recursive: true })
+}
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("session")
@@ -129,7 +137,8 @@ async function startBot() {
           sender,
           from,
           isGroup,
-          imageBuffer
+          imageBuffer,
+          sock
         })
       } catch (err) {
         console.log("Brain error:", err.message)
@@ -146,7 +155,10 @@ async function startBot() {
       }
 
       // ===== PLUGIN =====
-      const files = fs.readdirSync("./plugins").filter(f => f.endsWith(".js"))
+      const pluginDir = "./plugins"
+      const files = fs.existsSync(pluginDir)
+        ? fs.readdirSync(pluginDir).filter(f => f.endsWith(".js"))
+        : []
 
       const command = text.startsWith(".")
         ? text.slice(1).split(" ")[0].toLowerCase()
@@ -155,9 +167,10 @@ async function startBot() {
       for (let file of files) {
         let plugin
         try {
-          delete require.cache[require.resolve(`./plugins/${file}`)]
-          plugin = require(`./plugins/${file}`)
-        } catch {
+          delete require.cache[require.resolve(path.resolve(pluginDir, file))]
+          plugin = require(path.resolve(pluginDir, file))
+        } catch (e) {
+          console.log("Plugin load error:", file, e.message)
           continue
         }
 
@@ -168,7 +181,12 @@ async function startBot() {
           (plugin.alias && plugin.alias.includes(command))
         ) {
           const args = text.slice(1).split(" ").slice(1)
-          await plugin.run(sock, m, args)
+          try {
+            await plugin.run(sock, m, args)
+          } catch (e) {
+            console.log("Plugin run error:", file, e.message)
+            await sock.sendMessage(from, { text: "❌ Error menjalankan fitur: " + e.message })
+          }
           return
         }
       }
@@ -192,11 +210,9 @@ async function startBot() {
 
           if (userSetting.persona === "santai") {
             systemPrompt += " Jawab santai dan gaul."
-          }
-          if (userSetting.persona === "galak") {
+          } else if (userSetting.persona === "galak") {
             systemPrompt += " Jawab tegas dan galak."
-          }
-          if (userSetting.persona === "anime") {
+          } else if (userSetting.persona === "anime") {
             systemPrompt += " Jawab seperti karakter anime."
           }
 
@@ -220,7 +236,7 @@ async function startBot() {
               const audio = await axios.get(tts, { responseType: "arraybuffer" })
 
               await sock.sendMessage(from, {
-                audio: audio.data,
+                audio: Buffer.from(audio.data),
                 mimetype: "audio/mp4",
                 ptt: true
               })

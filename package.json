@@ -1,9 +1,9 @@
 {
   "name": "wa-ai-bot",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "main": "index.js",
   "scripts": {
-    "start": "npm install && node index.js",
+    "start": "node index.js",
     "dev": "node index.js"
   },
   "dependencies": {
