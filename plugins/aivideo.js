@@ -10,25 +10,25 @@ const FREE_APIS = [
   {
     name: "HuggingFace",
     daftar: "https://huggingface.co/join (gratis selamanya)",
-    key: "hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // ← ganti dengan HF token kamu
+    key: "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", // ← ganti dengan HF token kamu
     model: "damo-vilab/text-to-video-ms-1.7b"
   },
   {
     name: "HuggingFace Backup",
     daftar: "https://huggingface.co/join",
-    key: "hf_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy", // ← bisa buat 2 akun HF gratis
+    key: "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", // ← bisa buat 2 akun HF gratis
     model: "ali-vilab/i2vgen-xl"
   },
   {
     name: "Replicate",
     daftar: "https://replicate.com (gratis $5 credits signup)",
-    key: "r8_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // ← dari replicate.com/account/api-tokens
+    key: "r8_XeJwu9EkmNVjo6hlUf68HjGNPdoN64c0XVJav", // ← dari replicate.com/account/api-tokens
     model: "anotherjesse/zeroscope-v2-xl"
   },
   {
     name: "ModelsLab",
     daftar: "https://modelslab.com (free plan tersedia)",
-    key: "modelslab_xxxxxxxxxxxxxxxxxxxxx",      // ← dari modelslab.com/dashboard
+    key: "3uwJXFrgKqAPgEoaWPLb4wYqszu8IBxwOi0EQslrmsAju1S85HsvmVAAx1ni",      // ← dari modelslab.com/dashboard
     model: "text2video"
   }
 ]
