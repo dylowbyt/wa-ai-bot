@@ -8,8 +8,15 @@ const {
 
 const QRCode = require("qrcode")
 const fs = require("fs")
+const axios = require("axios")
 
-const { handleCommand, getMemory, addBotReply } = require("./ai/brain")
+const {
+  handleCommand,
+  getMemory,
+  addBotReply,
+  getSettings
+} = require("./ai/brain")
+
 const { startGempaMonitor } = require("./ai/gempaAlert")
 
 const OpenAI = require("openai")
@@ -60,7 +67,6 @@ async function startBot() {
     try {
       const m = msg.messages[0]
       if (!m.message) return
-
       if (m.key.fromMe) return
       if (m.message?.protocolMessage) return
 
@@ -84,16 +90,13 @@ async function startBot() {
       const isGroup = from.endsWith("@g.us")
       if (isGroup && !text.startsWith(".")) return
 
-      console.log("📩:", text)
-
       const sender = m.key.participant || m.key.remoteJid
 
-      // ===== DETEKSI GAMBAR (langsung atau quoted) =====
+      // ===== IMAGE DETECT =====
       const directImage = m.message?.imageMessage
       const quotedImage = quoted?.imageMessage
       const isImage = !!(directImage || quotedImage)
 
-      // ===== DOWNLOAD GAMBAR JIKA ADA =====
       let imageBuffer = null
 
       if (isImage) {
@@ -116,7 +119,7 @@ async function startBot() {
         }
       }
 
-      // ===== BRAIN SYSTEM (kirim imageBuffer jika ada) =====
+      // ===== BRAIN =====
       let res = null
       let isFromAI = false
 
@@ -136,14 +139,13 @@ async function startBot() {
         if (res.startsWith(".")) {
           text = res.trim()
           isFromAI = true
-          console.log("AUTO CMD:", text)
         } else {
           await sock.sendMessage(from, { text: res })
           return
         }
       }
 
-      // ===== PLUGIN SYSTEM =====
+      // ===== PLUGIN =====
       const files = fs.readdirSync("./plugins").filter(f => f.endsWith(".js"))
 
       const command = text.startsWith(".")
@@ -152,12 +154,10 @@ async function startBot() {
 
       for (let file of files) {
         let plugin
-
         try {
           delete require.cache[require.resolve(`./plugins/${file}`)]
           plugin = require(`./plugins/${file}`)
-        } catch (err) {
-          console.log("PLUGIN LOAD ERROR:", file, err.message)
+        } catch {
           continue
         }
 
@@ -167,76 +167,38 @@ async function startBot() {
           command === plugin.name ||
           (plugin.alias && plugin.alias.includes(command))
         ) {
-          try {
-            const args = text.slice(1).split(" ").slice(1)
-            await plugin.run(sock, m, args)
-            return
-          } catch (e) {
-            console.log("Plugin run error:", e.message)
-          }
+          const args = text.slice(1).split(" ").slice(1)
+          await plugin.run(sock, m, args)
+          return
         }
       }
 
       if (isFromAI) {
-        return await sock.sendMessage(from, {
+        return sock.sendMessage(from, {
           text: "❌ Fitur tidak ditemukan"
         })
       }
 
-      // ===== AUTO AI (hanya private chat) =====
+      // ===== AUTO AI PRIVATE =====
       if (!isGroup) {
-        if (text.startsWith(".")) return
+        if (!text || text.startsWith(".")) return
 
         try {
-          // ===== GAMBAR → OPENAI VISION =====
-          if (isImage && imageBuffer) {
-            const base64 = imageBuffer.toString("base64")
-
-            const aiVision = await openai.chat.completions.create({
-              model: "gpt-4o",
-              messages: [
-                {
-                  role: "user",
-                  content: [
-                    {
-                      type: "text",
-                      text: text || "Jelaskan gambar ini dengan santai"
-                    },
-                    {
-                      type: "image_url",
-                      image_url: {
-                        url: `data:image/jpeg;base64,${base64}`
-                      }
-                    }
-                  ]
-                }
-              ],
-              max_tokens: 1000
-            })
-
-            const reply =
-              aiVision.choices[0]?.message?.content ||
-              "Hmm, gambarnya gak bisa dibaca 😅"
-
-            await sock.sendMessage(from, { text: reply })
-            addBotReply(sender, reply)
-            return
-          }
-
-          // ===== GAMBAR ADA TAPI DOWNLOAD GAGAL =====
-          if (isImage && !imageBuffer) {
-            await sock.sendMessage(from, {
-              text: "⚠️ Gagal baca gambar, coba kirim ulang"
-            })
-            return
-          }
-
-          // ===== TEXT → OPENAI =====
-          if (!text) return
-
           const history = getMemory(sender)
+          const userSetting = getSettings(sender)
 
-          const systemPrompt = `Kamu adalah AI WhatsApp yang santai, gaul, dan helpful. Jawab seperti teman ngobrol, natural dan singkat.`
+          // ===== PERSONA =====
+          let systemPrompt = `Kamu adalah AI WhatsApp yang santai dan helpful.`
+
+          if (userSetting.persona === "santai") {
+            systemPrompt += " Jawab santai dan gaul."
+          }
+          if (userSetting.persona === "galak") {
+            systemPrompt += " Jawab tegas dan galak."
+          }
+          if (userSetting.persona === "anime") {
+            systemPrompt += " Jawab seperti karakter anime."
+          }
 
           const messages = [
             { role: "system", content: systemPrompt },
@@ -251,14 +213,30 @@ async function startBot() {
 
           const reply = ai.choices[0].message.content
 
-          await sock.sendMessage(from, { text: reply })
+          // ===== VOICE MODE =====
+          if (userSetting.mode === "voice") {
+            try {
+              const tts = `https://api.streamelements.com/kappa/v2/speech?voice=${userSetting.voice}&text=${encodeURIComponent(reply)}`
+              const audio = await axios.get(tts, { responseType: "arraybuffer" })
+
+              await sock.sendMessage(from, {
+                audio: audio.data,
+                mimetype: "audio/mp4",
+                ptt: true
+              })
+            } catch {
+              await sock.sendMessage(from, { text: reply })
+            }
+          } else {
+            await sock.sendMessage(from, { text: reply })
+          }
+
           addBotReply(sender, reply)
 
         } catch (err) {
           console.log("AI ERROR:", err.message)
-
           await sock.sendMessage(from, {
-            text: "⚠️ AI lagi error, coba lagi nanti"
+            text: "⚠️ AI error, coba lagi nanti"
           })
         }
       }
