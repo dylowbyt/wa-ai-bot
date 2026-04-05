@@ -1,5 +1,7 @@
-const axios = require("axios")
+const { downloadMediaMessage } = require("@whiskeysockets/baileys")
 const OpenAI = require("openai")
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 module.exports = {
   name: "ai",
@@ -9,67 +11,101 @@ module.exports = {
     const from = m.key.remoteJid
     const text = args.join(" ")
 
-    if (!text) {
+    const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage
+    const directImage = m.message?.imageMessage
+    const quotedImage = quoted?.imageMessage
+    const isImage = !!(directImage || quotedImage)
+
+    if (!text && !isImage) {
       return sock.sendMessage(from, {
-        text: "⚠️ Contoh:\n.ai apa itu api?\n.tanya kenapa langit biru?"
+        text: "⚠️ Contoh:\n.ai apa itu api?\n.tanya kenapa langit biru?\n\nAtau kirim gambar dengan caption .ai untuk analisis gambar."
       })
     }
 
     await sock.sendMessage(from, { text: "🤖 Thinking..." })
 
-    // Coba API gratis dulu
-    let replied = false
-
     try {
-      const res = await axios.get(
-        `https://api.siputzx.my.id/api/ai/meta-llama?prompt=${encodeURIComponent(text)}`,
-        { timeout: 15000 }
-      )
-      const answer = res.data?.data || res.data?.message || res.data?.result
-      if (answer) {
-        await sock.sendMessage(from, { text: String(answer) })
-        replied = true
-      }
-    } catch {}
+      // ===== GAMBAR → OPENAI VISION =====
+      if (isImage) {
+        let imageBuffer = null
 
-    // Fallback API 2
-    if (!replied) {
-      try {
-        const res2 = await axios.get(
-          `https://api.nexoracle.com/ai/gpt-3?apikey=free&text=${encodeURIComponent(text)}`,
-          { timeout: 15000 }
-        )
-        const answer2 = res2.data?.result || res2.data?.message
-        if (answer2) {
-          await sock.sendMessage(from, { text: String(answer2) })
-          replied = true
+        try {
+          const targetMsg = quotedImage
+            ? { key: m.key, message: quoted }
+            : m
+
+          imageBuffer = await downloadMediaMessage(
+            targetMsg,
+            "buffer",
+            {},
+            {
+              logger: console,
+              reuploadRequest: sock.updateMediaMessage
+            }
+          )
+        } catch (e) {
+          console.log("Download gambar error:", e.message)
         }
-      } catch {}
-    }
 
-    // Fallback ke OpenAI kalau ada key
-    if (!replied && process.env.OPENAI_API_KEY) {
-      try {
-        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+        if (!imageBuffer) {
+          return sock.sendMessage(from, {
+            text: "⚠️ Gagal baca gambar, coba kirim ulang"
+          })
+        }
+
+        const base64 = imageBuffer.toString("base64")
+
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
+          model: "gpt-4o",
           messages: [
-            { role: "system", content: "Kamu adalah AI asisten yang helpful, singkat dan santai." },
-            { role: "user", content: text }
-          ]
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: text || "Jelaskan gambar ini dengan santai"
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:image/jpeg;base64,${base64}`
+                  }
+                }
+              ]
+            }
+          ],
+          max_tokens: 1000
         })
-        const answer3 = completion.choices[0]?.message?.content
-        if (answer3) {
-          await sock.sendMessage(from, { text: answer3 })
-          replied = true
-        }
-      } catch (e) {
-        console.log("OPENAI ERROR:", e.message)
-      }
-    }
 
-    if (!replied) {
-      await sock.sendMessage(from, { text: "❌ AI sedang tidak bisa diakses, coba lagi nanti" })
+        const reply =
+          completion.choices[0]?.message?.content ||
+          "Hmm, gambarnya gak bisa dibaca 😅"
+
+        return sock.sendMessage(from, { text: reply })
+      }
+
+      // ===== TEXT → OPENAI =====
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "Kamu adalah AI asisten yang helpful, singkat dan santai."
+          },
+          { role: "user", content: text }
+        ]
+      })
+
+      const reply = completion.choices[0]?.message?.content
+      if (reply) {
+        await sock.sendMessage(from, { text: reply })
+      } else {
+        await sock.sendMessage(from, { text: "❌ AI sedang tidak bisa diakses, coba lagi nanti" })
+      }
+
+    } catch (e) {
+      console.log("OPENAI ERROR:", e.message)
+      await sock.sendMessage(from, { text: "❌ AI error, coba lagi nanti" })
     }
   }
 }
