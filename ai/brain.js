@@ -1,5 +1,23 @@
 const memory = {}
+const settings = {}
 
+// ================= SETTINGS =================
+function getSettings(sender) {
+  if (!settings[sender]) {
+    settings[sender] = {
+      mode: "text",     // text / voice
+      voice: "Brian",   // Brian (cowok) / Amy (cewek)
+      persona: "default"
+    }
+  }
+  return settings[sender]
+}
+
+function updateSettings(sender, data) {
+  settings[sender] = { ...getSettings(sender), ...data }
+}
+
+// ================= MAIN HANDLER =================
 // FIX: Terima imageBuffer dari index.js
 async function handleCommand({ text, sender, from, isGroup, imageBuffer }) {
   const lowerText = (text || "").toLowerCase()
@@ -35,21 +53,16 @@ async function handleCommand({ text, sender, from, isGroup, imageBuffer }) {
     if (urlMatch) return ".tt " + urlMatch[0]
   }
 
-  // ===== TRIGGER ANALISIS GAMBAR JIKA ADA imageBuffer =====
-  // Brain mengembalikan null agar index.js yang handle pakai Gemini
-  // Tapi kita bisa intercept di sini kalau butuh routing khusus
+  // ===== TRIGGER ANALISIS GAMBAR =====
   if (imageBuffer) {
-    // Contoh: kalau user minta "buat meme dari foto ini"
     if (lowerText.includes("meme")) {
       return ".memeai"
     }
 
-    // Kalau user minta jadiin URL
     if (lowerText.includes("tourl") || lowerText.includes("upload link")) {
       return ".tourl"
     }
 
-    // Selain itu, biarkan index.js kirim ke Gemini Vision
     return null
   }
 
@@ -66,18 +79,19 @@ async function handleCommand({ text, sender, from, isGroup, imageBuffer }) {
   return null
 }
 
-// ===== CODING MODE =====
+// ================= CODING MODE =================
 async function codingMode(text) {
   // Placeholder — bisa dihubungkan ke OpenAI/Gemini
   return null
 }
 
-// ===== ANALYZE MODE =====
+// ================= ANALYZE MODE =================
 async function analyzeMode(text) {
   // Placeholder — bisa dihubungkan ke OpenAI/Gemini
   return null
 }
 
+// ================= MEMORY =================
 function getMemory(sender) {
   return memory[sender] || []
 }
@@ -95,5 +109,7 @@ function addBotReply(sender, reply) {
 module.exports = {
   handleCommand,
   getMemory,
-  addBotReply
+  addBotReply,
+  getSettings,
+  updateSettings
 }
