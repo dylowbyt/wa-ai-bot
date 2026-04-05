@@ -4,10 +4,10 @@
  */
 
 module.exports = {
-  nama: "ZenBot",
+  nama: "XYABOT",
   versi: "2.0.0",
-  pembuat: "Owner",        // ← ganti nama kamu di sini
-  nomorPembuat: "628xxxxxxxxxx",  // ← ganti nomor kamu
+  pembuat: "ANDY PEBRIANTO",        // ← ganti nama kamu di sini
+  nomorPembuat: "6283866344919",  // ← ganti nomor kamu
   deskripsi: "Bot WhatsApp AI serba bisa dengan 100+ fitur: cuaca, keuangan, download media, AI chat, dan masih banyak lagi.",
   bahasa: "Indonesia",
   library: "Baileys (@whiskeysockets)",
