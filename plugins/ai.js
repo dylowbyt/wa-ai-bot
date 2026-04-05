@@ -1,4 +1,5 @@
 const { OpenAI } = require("openai")
+const axios = require("axios")
 const identity = require("./identity")
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -6,14 +7,38 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 const HISTORY = {}
 const MAX_HISTORY = 10
 
+// 🔊 MODE USER
+const userMode = global.userMode || (global.userMode = {})
+
 module.exports = {
   name: "ai",
-  alias: ["bot", "gpt", "tanya", "chat", "ask"],
+  alias: ["bot", "gpt", "tanya", "chat", "ask", "mode"],
 
   async run(sock, m, args) {
     const from = m.key.remoteJid
     const sender = m.key.participant || from
     const teks = args.join(" ")
+
+    // ================= MODE COMMAND
+    if (m.message?.conversation?.startsWith(".mode")) {
+      if (!teks) {
+        return sock.sendMessage(from, {
+          text: "⚙️ Pilih mode:\n• .mode voice\n• .mode text"
+        })
+      }
+
+      if (teks === "voice") {
+        userMode[sender] = "voice"
+        return sock.sendMessage(from, { text: "🔊 Mode VOICE aktif" })
+      }
+
+      if (teks === "text") {
+        userMode[sender] = "text"
+        return sock.sendMessage(from, { text: "💬 Mode TEXT aktif" })
+      }
+
+      return sock.sendMessage(from, { text: "❌ Pilihan salah" })
+    }
 
     if (!teks) {
       return sock.sendMessage(from, {
@@ -21,14 +46,9 @@ module.exports = {
 
 Cara pakai: .ai <pertanyaan>
 
-Contoh:
-• .ai siapa kamu?
-• .ai fitur apa saja yang kamu punya?
-• .ai siapa yang bikin kamu?
-• .ai apa itu IHSG?
-• .ai tolong jelaskan tentang investasi saham
-
-Ketik *.botinfo* untuk info lengkap tentang saya.`
+Tambahan:
+• .mode voice → balasan suara
+• .mode text → balasan teks`
       })
     }
 
@@ -50,7 +70,7 @@ Ketik *.botinfo* untuk info lengkap tentang saya.`
       let systemPrompt = identity.sistemPrompt()
 
       if (isAskingAboutSelf) {
-        systemPrompt += `\n\nPERHATIAN: Pengguna sedang bertanya tentang dirimu. Jawab dengan detail dan percaya diri tentang identitas, kemampuan, dan fitur-fiturmu. Sebutkan total ${identity.plugins.length} fitur yang kamu miliki.`
+        systemPrompt += `\n\nPERHATIAN: Jelaskan identitas dan fitur secara detail.`
       }
 
       const messages = [
@@ -66,29 +86,42 @@ Ketik *.botinfo* untuk info lengkap tentang saya.`
       })
 
       const jawaban = res.choices[0]?.message?.content?.trim()
-
       if (!jawaban) throw new Error("Tidak ada respons dari AI")
 
       HISTORY[sender].push({ role: "assistant", content: jawaban })
 
-      await sock.sendMessage(from, {
-        text: `🤖 *${identity.nama}*\n━━━━━━━━━━━━\n${jawaban}\n\n_💡 Ketik .ai reset untuk hapus riwayat chat_`
-      })
+      // ================= MODE CHECK
+      if (userMode[sender] === "voice") {
+        const tts = `https://api.streamelements.com/kappa/v2/speech?voice=Brian&text=${encodeURIComponent(jawaban)}`
+
+        const audio = await axios.get(tts, { responseType: "arraybuffer" })
+
+        await sock.sendMessage(from, {
+          audio: audio.data,
+          mimetype: "audio/mp4",
+          ptt: true
+        })
+      } else {
+        await sock.sendMessage(from, {
+          text: `🤖 *${identity.nama}*\n━━━━━━━━━━━━\n${jawaban}`
+        })
+      }
 
     } catch (err) {
+
       if (teks.toLowerCase() === "reset") {
         HISTORY[sender] = []
-        return sock.sendMessage(from, { text: "🔄 Riwayat chat berhasil dihapus!" })
+        return sock.sendMessage(from, { text: "🔄 Riwayat chat direset!" })
       }
 
       if (err.code === "insufficient_quota" || err.status === 429) {
         return sock.sendMessage(from, {
-          text: `⚠️ Saat ini API AI sedang sibuk. Coba lagi beberapa saat.\n\nAlternatif: ketik *.wiki <topik>* untuk cari info di Wikipedia.`
+          text: "⚠️ API AI sibuk, coba lagi nanti"
         })
       }
 
       await sock.sendMessage(from, {
-        text: `❌ Gagal memproses pertanyaan: ${err.message?.slice(0, 100)}\n\nCoba lagi atau gunakan *.wiki <topik>* sebagai alternatif.`
+        text: `❌ Error: ${err.message?.slice(0, 100)}`
       })
     }
   }
