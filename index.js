@@ -29,15 +29,20 @@ const openai = new OpenAI({
 
 const processed = new Set()
 
-// ===== TTS: OpenAI langsung output OGG Opus, tidak butuh ffmpeg =====
+// ===== TTS =====
 const VOICE_MAP = { brian:"onyx", amy:"nova", cowok:"onyx", cewek:"nova", justin:"echo", joanna:"shimmer", matthew:"fable" }
 async function textToSpeech(text, voice = "Brian") {
   const oaiVoice = VOICE_MAP[(voice||"brian").toLowerCase()] || "alloy"
-  const audio = await openai.audio.speech.create({ model:"tts-1", voice:oaiVoice, input:text, response_format:"opus" })
+  const audio = await openai.audio.speech.create({
+    model:"gpt-4o-mini-tts",
+    voice:oaiVoice,
+    input:`Bacakan dalam Bahasa Indonesia dengan natural. ${text}`,
+    format:"opus"
+  })
   return Buffer.from(await audio.arrayBuffer())
 }
 
-// ===== HELPER: Kirim balasan (teks atau voice tergantung mode) =====
+// ===== HELPER SEND =====
 async function sendReply(sock, from, sender, text) {
   const userSetting = getSettings(sender)
 
@@ -52,14 +57,13 @@ async function sendReply(sock, from, sender, text) {
       return
     } catch (e) {
       console.log("TTS error:", e.message)
-      // fallback ke teks
     }
   }
 
   await sock.sendMessage(from, { text })
 }
 
-// Pastikan folder plugins ada
+// ===== INIT PLUGIN FOLDER =====
 if (!fs.existsSync("./plugins")) {
   fs.mkdirSync("./plugins", { recursive: true })
 }
@@ -227,15 +231,15 @@ async function startBot() {
         })
       }
 
-      // ===== AUTO AI PRIVATE =====
+      // ===== AUTO AI PRIVATE (SUDAH SUPPORT VISION) =====
       if (!isGroup) {
-        if (!text || text.startsWith(".")) return
+        if (!text && !imageBuffer) return
+        if (text.startsWith(".")) return
 
         try {
           const history = getMemory(sender)
           const userSetting = getSettings(sender)
 
-          // ===== PERSONA =====
           let systemPrompt = `Kamu adalah AI WhatsApp yang santai dan helpful.`
 
           if (userSetting.persona === "santai") {
@@ -246,15 +250,36 @@ async function startBot() {
             systemPrompt += " Jawab seperti karakter anime."
           }
 
-          const messages = [
-            { role: "system", content: systemPrompt },
-            ...history,
-            { role: "user", content: text }
-          ]
+          let userContent = []
+
+          if (text) {
+            userContent.push({ type: "text", text })
+          }
+
+          if (imageBuffer) {
+            const base64 = imageBuffer.toString("base64")
+            userContent.push({
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${base64}`
+              }
+            })
+          }
+
+          if (userContent.length === 0) {
+            userContent.push({ type: "text", text: "Halo" })
+          }
 
           const ai = await openai.chat.completions.create({
             model: "gpt-4o-mini",
-            messages
+            messages: [
+              { role: "system", content: systemPrompt },
+              ...history,
+              {
+                role: "user",
+                content: userContent
+              }
+            ]
           })
 
           const reply = ai.choices[0].message.content
