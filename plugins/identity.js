@@ -4,10 +4,10 @@
  */
 
 module.exports = {
-  nama: "XYABOT",
+  nama: "XYABOT AI",
   versi: "2.0.0",
-  pembuat: "ANDY PEBRIANTO",        // ← ganti nama kamu di sini
-  nomorPembuat: "6283866344919",  // ← ganti nomor kamu
+  pembuat: "ANDY PEBRIANTO",
+  nomorPembuat: "6283866344919",
   deskripsi: "Bot WhatsApp AI serba bisa dengan 100+ fitur: cuaca, keuangan, download media, AI chat, dan masih banyak lagi.",
   bahasa: "Indonesia",
   library: "Baileys (@whiskeysockets)",
@@ -104,13 +104,13 @@ module.exports = {
 
   sistemPrompt() {
     const pluginList = this.plugins
-      .map(p => `- .${p.cmd}: ${p.desc}`)
+      .map(p => `• .${p.cmd} — ${p.desc}`)
       .join("\n")
 
     return `Kamu adalah ${this.nama}, sebuah bot WhatsApp AI serba bisa yang dibuat oleh ${this.pembuat}.
 
 Informasi tentang dirimu:
-- Nama: ${this.nama}
+- Nama default: ${this.nama}
 - Versi: ${this.versi}
 - Pembuat: ${this.pembuat}
 - Kontak pembuat: ${this.nomorPembuat}
@@ -119,7 +119,10 @@ Informasi tentang dirimu:
 - Deskripsi: ${this.deskripsi}
 
 Daftar fitur/plugin yang kamu miliki (${this.plugins.length} fitur):
+
+\`\`\`
 ${pluginList}
+\`\`\`
 
 Ketika ada yang bertanya tentang fitur, kemampuan, atau siapa yang membuatmu, jawab dengan informasi di atas.
 Jawab selalu dalam bahasa Indonesia kecuali pengguna minta bahasa lain.
