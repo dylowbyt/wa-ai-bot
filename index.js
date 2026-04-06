@@ -29,14 +29,7 @@ const openai = new OpenAI({
 
 const processed = new Set()
 
-// ===== TTS Helper =====
-const VOICE_MAP = { brian: "onyx", amy: "nova", cowok: "onyx", cewek: "nova", justin: "echo", joanna: "shimmer", matthew: "fable" }
-
-async function textToSpeech(text, voice = "Brian") {
-  const oaiVoice = VOICE_MAP[(voice || "brian").toLowerCase()] || "alloy"
-  const mp3 = await openai.audio.speech.create({ model: "tts-1", voice: oaiVoice, input: text })
-  return Buffer.from(await mp3.arrayBuffer())
-}
+const { textToSpeech } = require("./ai/tts")
 
 // ===== HELPER: Kirim balasan (teks atau voice tergantung mode) =====
 async function sendReply(sock, from, sender, text) {
