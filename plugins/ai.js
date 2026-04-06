@@ -95,6 +95,9 @@ module.exports = {
           "• `.ai voice cewek/cowok` — ganti suara\n" +
           "• `.ai persona santai/galak/anime/default`\n" +
           "• `.ai reset` — hapus memory\n" +
+          "• `.menu` — melihat semua commands\n" +
+          "• `.infobot` — info bot\n" +
+          "• `.ping` — cek ai on\n" +
           "• `.ai info` — lihat setting"
       })
     }
