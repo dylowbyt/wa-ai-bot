@@ -3,15 +3,46 @@ const brain = require("../ai/brain")
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-// ===== TTS: OpenAI langsung output OGG Opus, tidak butuh ffmpeg =====
-const VOICE_MAP = { brian:"onyx", amy:"nova", cowok:"onyx", cewek:"nova", justin:"echo", joanna:"shimmer", matthew:"fable" }
-async function textToSpeech(text, voice = "Brian") {
-  const oaiVoice = VOICE_MAP[(voice||"brian").toLowerCase()] || "alloy"
-  const audio = await openai.audio.speech.create({ model:"tts-1", voice:oaiVoice, input:text, response_format:"opus" })
+// ===== VOICE MAP =====
+const VOICE_MAP = {
+  brian:"onyx",
+  amy:"nova",
+  cowok:"onyx",
+  cewek:"nova",
+  justin:"echo",
+  joanna:"shimmer",
+  matthew:"fable"
+}
+
+// ===== TTS INDONESIA + EMOSI =====
+async function textToSpeech(text, voice = "Brian", persona = "default") {
+  let oaiVoice = VOICE_MAP[(voice||"brian").toLowerCase()] || "alloy"
+
+  let styleText = `Bacakan dalam Bahasa Indonesia dengan jelas dan natural. ${text}`
+
+  if (persona === "santai") {
+    styleText = `Bacakan dalam Bahasa Indonesia dengan gaya santai, ramah, seperti ngobrol. ${text}`
+  }
+
+  if (persona === "galak") {
+    styleText = `Bacakan dalam Bahasa Indonesia dengan nada tegas dan serius. ${text}`
+  }
+
+  if (persona === "anime") {
+    styleText = `Bacakan dalam Bahasa Indonesia dengan gaya imut, ekspresif seperti karakter anime. ${text}`
+  }
+
+  const audio = await openai.audio.speech.create({
+    model: "gpt-4o-mini-tts",
+    voice: oaiVoice,
+    input: styleText,
+    format: "opus"
+  })
+
   return Buffer.from(await audio.arrayBuffer())
 }
 
-// Load identity kalau ada, kalau tidak pakai default
+// ===== IDENTITY =====
 let identity
 try {
   identity = require("../ai/identity")
@@ -92,7 +123,7 @@ module.exports = {
       })
     }
 
-    if (!text) {
+    if (!text && !m.message?.imageMessage) {
       return sock.sendMessage(from, {
         text:
           "🤖 *Cara pakai .ai:*\n" +
@@ -102,7 +133,8 @@ module.exports = {
           "• `.ai voice cewek/cowok` — ganti suara\n" +
           "• `.ai persona santai/galak/anime/default`\n" +
           "• `.ai reset` — hapus memory\n" +
-          "• `.ai info` — lihat setting"
+          "• `.ai info` — lihat setting\n" +
+          "• kirim gambar + .ai → analisa gambar"
       })
     }
 
@@ -115,26 +147,60 @@ module.exports = {
     if (userSetting.persona === "galak") systemPrompt += "\nJawab tegas dan galak."
     if (userSetting.persona === "anime") systemPrompt += "\nJawab seperti karakter anime."
 
-    const messages = [
-      { role: "system", content: systemPrompt },
-      ...history,
-      { role: "user", content: text }
-    ]
-
     try {
+      let userContent = []
+
+      if (text) {
+        userContent.push({ type: "text", text })
+      }
+
+      if (m.message?.imageMessage) {
+        try {
+          const buffer = await sock.downloadMediaMessage(m)
+          const base64 = buffer.toString("base64")
+          const mime = m.message.imageMessage.mimetype || "image/jpeg"
+
+          userContent.push({
+            type: "image_url",
+            image_url: {
+              url: `data:${mime};base64,${base64}`
+            }
+          })
+
+        } catch (e) {
+          console.log("Vision error:", e)
+        }
+      }
+
+      if (userContent.length === 0) {
+        userContent.push({ type: "text", text: "Halo" })
+      }
+
       const res = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...history,
+          {
+            role: "user",
+            content: userContent
+          }
+        ],
+        temperature: 0.7
       })
 
       const reply = res.choices[0].message.content
 
       brain.addBotReply(sender, reply)
 
-      // ================= VOICE / TEXT
       if (userSetting.mode === "voice") {
         try {
-          const audioBuffer = await textToSpeech(reply, userSetting.voice)
+          const audioBuffer = await textToSpeech(
+            reply,
+            userSetting.voice,
+            userSetting.persona
+          )
+
           return sock.sendMessage(from, {
             audio: audioBuffer,
             mimetype: "audio/ogg; codecs=opus",
