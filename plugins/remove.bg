@@ -4,7 +4,7 @@ const FormData = require("form-data")
 module.exports = {
   name: "removebg",
   command: ["removebg", "nobg"],
-  category: "tools",
+  category: "ai",
   description: "Hapus background gambar",
 
   async execute({ sock, m }) {
