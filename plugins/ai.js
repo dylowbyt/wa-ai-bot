@@ -1,6 +1,6 @@
 const { OpenAI } = require("openai")
-const axios = require("axios")
 const brain = require("../ai/brain")
+const { textToSpeech } = require("../ai/tts")
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -95,9 +95,6 @@ module.exports = {
           "• `.ai voice cewek/cowok` — ganti suara\n" +
           "• `.ai persona santai/galak/anime/default`\n" +
           "• `.ai reset` — hapus memory\n" +
-          "• `.menu` — melihat semua commands\n" +
-          "• `.infobot` — info bot\n" +
-          "• `.ping` — cek ai on\n" +
           "• `.ai info` — lihat setting"
       })
     }
@@ -130,11 +127,9 @@ module.exports = {
       // ================= VOICE / TEXT
       if (userSetting.mode === "voice") {
         try {
-          const tts = `https://api.streamelements.com/kappa/v2/speech?voice=${userSetting.voice}&text=${encodeURIComponent(reply)}`
-          const audio = await axios.get(tts, { responseType: "arraybuffer" })
-
+          const audioBuffer = await textToSpeech(reply, userSetting.voice)
           return sock.sendMessage(from, {
-            audio: Buffer.from(audio.data), // ✅ FIX: wajib pakai Buffer.from()
+            audio: audioBuffer,
             mimetype: "audio/mp4",
             ptt: true
           })
