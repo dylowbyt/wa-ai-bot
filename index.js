@@ -29,7 +29,13 @@ const openai = new OpenAI({
 
 const processed = new Set()
 
-const { textToSpeech } = require("./ai/tts")
+// ===== TTS: OpenAI langsung output OGG Opus, tidak butuh ffmpeg =====
+const VOICE_MAP = { brian:"onyx", amy:"nova", cowok:"onyx", cewek:"nova", justin:"echo", joanna:"shimmer", matthew:"fable" }
+async function textToSpeech(text, voice = "Brian") {
+  const oaiVoice = VOICE_MAP[(voice||"brian").toLowerCase()] || "alloy"
+  const audio = await openai.audio.speech.create({ model:"tts-1", voice:oaiVoice, input:text, response_format:"opus" })
+  return Buffer.from(await audio.arrayBuffer())
+}
 
 // ===== HELPER: Kirim balasan (teks atau voice tergantung mode) =====
 async function sendReply(sock, from, sender, text) {
@@ -40,12 +46,13 @@ async function sendReply(sock, from, sender, text) {
       const audioBuffer = await textToSpeech(text, userSetting.voice)
       await sock.sendMessage(from, {
         audio: audioBuffer,
-        mimetype: "audio/mp4",
+        mimetype: "audio/ogg; codecs=opus",
         ptt: true
       })
       return
     } catch (e) {
       console.log("TTS error:", e.message)
+      // fallback ke teks
     }
   }
 
