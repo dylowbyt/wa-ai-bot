@@ -29,6 +29,28 @@ const openai = new OpenAI({
 
 const processed = new Set()
 
+// ===== HELPER: Kirim balasan (teks atau voice tergantung mode) =====
+async function sendReply(sock, from, sender, text) {
+  const userSetting = getSettings(sender)
+
+  if (userSetting.mode === "voice") {
+    try {
+      const tts = `https://api.streamelements.com/kappa/v2/speech?voice=${userSetting.voice}&text=${encodeURIComponent(text)}`
+      const audio = await axios.get(tts, { responseType: "arraybuffer" })
+      await sock.sendMessage(from, {
+        audio: Buffer.from(audio.data),
+        mimetype: "audio/mp4",
+        ptt: true
+      })
+      return
+    } catch (e) {
+      console.log("TTS error:", e.message)
+    }
+  }
+
+  await sock.sendMessage(from, { text })
+}
+
 // Pastikan folder plugins ada
 if (!fs.existsSync("./plugins")) {
   fs.mkdirSync("./plugins", { recursive: true })
@@ -149,7 +171,7 @@ async function startBot() {
           text = res.trim()
           isFromAI = true
         } else {
-          await sock.sendMessage(from, { text: res })
+          await sendReply(sock, from, sender, res)
           return
         }
       }
@@ -229,24 +251,7 @@ async function startBot() {
 
           const reply = ai.choices[0].message.content
 
-          // ===== VOICE MODE =====
-          if (userSetting.mode === "voice") {
-            try {
-              const tts = `https://api.streamelements.com/kappa/v2/speech?voice=${userSetting.voice}&text=${encodeURIComponent(reply)}`
-              const audio = await axios.get(tts, { responseType: "arraybuffer" })
-
-              await sock.sendMessage(from, {
-                audio: Buffer.from(audio.data),
-                mimetype: "audio/mp4",
-                ptt: true
-              })
-            } catch {
-              await sock.sendMessage(from, { text: reply })
-            }
-          } else {
-            await sock.sendMessage(from, { text: reply })
-          }
-
+          await sendReply(sock, from, sender, reply)
           addBotReply(sender, reply)
 
         } catch (err) {
