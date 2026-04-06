@@ -35,10 +35,10 @@ async function sendReply(sock, from, sender, text) {
 
   if (userSetting.mode === "voice") {
     try {
-      const tts = `https://api.streamelements.com/kappa/v2/speech?voice=${userSetting.voice}&text=${encodeURIComponent(text)}`
-      const audio = await axios.get(tts, { responseType: "arraybuffer" })
+      const { textToSpeech } = require("./ai/tts")
+      const audioBuffer = await textToSpeech(text, userSetting.voice)
       await sock.sendMessage(from, {
-        audio: Buffer.from(audio.data),
+        audio: audioBuffer,
         mimetype: "audio/mp4",
         ptt: true
       })
