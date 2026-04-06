@@ -36,7 +36,7 @@ async function textToSpeech(text, voice = "Brian") {
   const audio = await openai.audio.speech.create({
     model:"gpt-4o-mini-tts",
     voice:oaiVoice,
-    input:`Bacakan dalam Bahasa Indonesia dengan natural. ${text}`,
+    input:` ${text}`,
     format:"opus"
   })
   return Buffer.from(await audio.arrayBuffer())
