@@ -1,8 +1,15 @@
 const { OpenAI } = require("openai")
 const brain = require("../ai/brain")
-const { textToSpeech } = require("../ai/tts")
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+
+// ===== TTS: OpenAI langsung output OGG Opus, tidak butuh ffmpeg =====
+const VOICE_MAP = { brian:"onyx", amy:"nova", cowok:"onyx", cewek:"nova", justin:"echo", joanna:"shimmer", matthew:"fable" }
+async function textToSpeech(text, voice = "Brian") {
+  const oaiVoice = VOICE_MAP[(voice||"brian").toLowerCase()] || "alloy"
+  const audio = await openai.audio.speech.create({ model:"tts-1", voice:oaiVoice, input:text, response_format:"opus" })
+  return Buffer.from(await audio.arrayBuffer())
+}
 
 // Load identity kalau ada, kalau tidak pakai default
 let identity
@@ -130,7 +137,7 @@ module.exports = {
           const audioBuffer = await textToSpeech(reply, userSetting.voice)
           return sock.sendMessage(from, {
             audio: audioBuffer,
-            mimetype: "audio/mp4",
+            mimetype: "audio/ogg; codecs=opus",
             ptt: true
           })
         } catch (e) {
