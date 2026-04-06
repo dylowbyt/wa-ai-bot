@@ -14,28 +14,62 @@ const VOICE_MAP = {
   matthew:"fable"
 }
 
-// ===== TTS INDONESIA + EMOSI =====
+// ===== TTS INDONESIA + EMOSI (FIXED) =====
 async function textToSpeech(text, voice = "Brian", persona = "default") {
   let oaiVoice = VOICE_MAP[(voice||"brian").toLowerCase()] || "alloy"
 
-  let styleText = `Bacakan dalam Bahasa Indonesia dengan jelas dan natural. ${text}`
+  // ===== EMOTION DETECTOR
+  let emotion = "normal"
+  const lower = text.toLowerCase()
 
-  if (persona === "santai") {
-    styleText = `Bacakan dalam Bahasa Indonesia dengan gaya santai, ramah, seperti ngobrol. ${text}`
+  if (/anj|goblok|tolol|diam|apaan|apa sih|berisik/.test(lower)) {
+    emotion = "marah"
+  } else if (/haha|wkwk|lol|ngakak|lucu/.test(lower)) {
+    emotion = "happy"
+  } else if (/sedih|capek|lelah|kecewa|hiks/.test(lower)) {
+    emotion = "sad"
   }
 
-  if (persona === "galak") {
-    styleText = `Bacakan dalam Bahasa Indonesia dengan nada tegas dan serius. ${text}`
-  }
+  // ===== STYLE TEXT (NO "BACAKAN")
+  let styled = text
 
+  // anime feel
   if (persona === "anime") {
-    styleText = `Bacakan dalam Bahasa Indonesia dengan gaya imut, ekspresif seperti karakter anime. ${text}`
+    styled = styled
+      .replace(/\.$/, "!")
+      .replace(/\?/g, "?!")
   }
+
+  // emotion effect
+  if (emotion === "marah") {
+    styled = styled.toUpperCase().replace(/\.$/, "!")
+  }
+
+  if (emotion === "happy") {
+    styled = styled + " hehe~"
+  }
+
+  if (emotion === "sad") {
+    styled = "..." + styled
+  }
+
+  // ===== NATURAL DELAY
+  styled = styled
+    .replace(/,/g, ", ... ")
+    .replace(/\./g, ". ... ")
+    .replace(/!/g, "! ... ")
+
+  // ===== CLEAN (ANTI BUG LAMA)
+  styled = styled
+    .replace(/bacakan.*?:/gi, "")
+    .replace(/dengan gaya.*?:/gi, "")
+    .replace(/dalam bahasa indonesia.*?:/gi, "")
+    .trim()
 
   const audio = await openai.audio.speech.create({
     model: "gpt-4o-mini-tts",
     voice: oaiVoice,
-    input: styleText,
+    input: styled,
     format: "opus"
   })
 
