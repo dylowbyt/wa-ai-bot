@@ -29,6 +29,10 @@ const openai = new OpenAI({
 
 const processed = new Set()
 
+setInterval(() => {
+  if (processed.size > 5000) processed.clear()
+}, 300000)
+
 // ===== TTS =====
 const VOICE_MAP = { brian:"onyx", amy:"nova", cowok:"onyx", cewek:"nova", justin:"echo", joanna:"shimmer", matthew:"fable" }
 async function textToSpeech(text, voice = "Brian") {
@@ -231,7 +235,7 @@ async function startBot() {
         })
       }
 
-      // ===== AUTO AI PRIVATE (SUDAH SUPPORT VISION) =====
+      // ===== AUTO AI PRIVATE (SUPPORT VISION) =====
       if (!isGroup) {
         if (!text && !imageBuffer) return
         if (text.startsWith(".")) return
@@ -240,7 +244,16 @@ async function startBot() {
           const history = getMemory(sender)
           const userSetting = getSettings(sender)
 
-          let systemPrompt = `Kamu adalah AI WhatsApp yang santai dan helpful.`
+          let identity
+          try {
+            identity = require("./plugins/identity")
+          } catch {
+            identity = null
+          }
+
+          let systemPrompt = identity && identity.sistemPrompt
+            ? identity.sistemPrompt()
+            : "Kamu adalah AI WhatsApp yang santai dan helpful."
 
           if (userSetting.persona === "santai") {
             systemPrompt += " Jawab santai dan gaul."
@@ -258,12 +271,20 @@ async function startBot() {
 
           if (imageBuffer) {
             const base64 = imageBuffer.toString("base64")
+            const mime = directImage?.mimetype || quotedImage?.mimetype || "image/jpeg"
             userContent.push({
               type: "image_url",
               image_url: {
-                url: `data:image/jpeg;base64,${base64}`
+                url: `data:${mime};base64,${base64}`
               }
             })
+
+            if (!text) {
+              userContent.unshift({
+                type: "text",
+                text: "Analisis dan deskripsikan gambar ini dalam bahasa Indonesia"
+              })
+            }
           }
 
           if (userContent.length === 0) {
