@@ -22,7 +22,7 @@ module.exports = {
         })
       }
 
-      const msg = quoted ? { message: quoted } : m
+      const msg = quoted ? { key: m.key, message: quoted } : m
 
       const buffer = await downloadMediaMessage(
         msg,

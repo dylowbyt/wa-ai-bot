@@ -22,10 +22,12 @@ module.exports = {
         })
       }
 
-      const msg = quoted ? { message: quoted } : m
+      const targetMsg = quoted
+        ? { key: m.key, message: quoted }
+        : m
 
       const buffer = await downloadMediaMessage(
-        msg,
+        targetMsg,
         "buffer",
         {},
         {
@@ -34,20 +36,13 @@ module.exports = {
         }
       )
 
-      // 🔥 VALIDASI BUFFER
       if (!buffer || buffer.length < 1000) {
         throw new Error("Gambar rusak / terlalu kecil")
       }
 
-      // 🔥 PROCESS HD (LEBIH HALUS)
       let image = sharp(buffer)
-
       const metadata = await image.metadata()
-
-      // upscale max 2x biar gak pecah
       const width = metadata.width
-      const height = metadata.height
-
       const upscaleWidth = width < 1000 ? width * 2 : width
 
       const result = await image
@@ -73,12 +68,11 @@ module.exports = {
 
       await sock.sendMessage(from, {
         image: result,
-        caption: "✨ HD berhasil (AI Enhance Offline)"
+        caption: "✨ HD berhasil (AI Enhance)"
       })
 
     } catch (err) {
       console.log("HD ERROR:", err)
-
       await sock.sendMessage(from, {
         text: "❌ Gagal proses HD, coba foto lain"
       })

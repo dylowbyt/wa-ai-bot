@@ -1,76 +1,76 @@
-export default {
-  name: "vdhr",
-  command: ["vdhr"],
-  tags: ["ai"],
-  description: "Generate video dari teks (Magic Hour AI)",
+const axios = require("axios")
 
-  run: async (m, { text, reply }) => {
+module.exports = {
+  name: "vdhr",
+  alias: [],
+
+  async run(sock, m, args) {
+    const from = m.key.remoteJid
+
+    const text = args.join(" ")
     if (!text) {
-      return reply("Masukkan prompt!\nContoh:\n.vdhr kucing naik motor");
+      return sock.sendMessage(from, {
+        text: "⚠️ Contoh:\n.vdhr kucing naik motor"
+      })
     }
 
-    // 🔑 Ambil dari Railway ENV
-    const API_KEY = process.env.MAGIC_HOUR_KEY;
-
+    const API_KEY = process.env.MAGIC_HOUR_KEY
     if (!API_KEY) {
-      return reply("❌ API KEY belum diset di Railway!");
+      return sock.sendMessage(from, {
+        text: "❌ MAGIC_HOUR_KEY belum diset di ENV"
+      })
     }
 
     try {
-      reply("🎬 Membuat video...");
+      await sock.sendMessage(from, { text: "🎬 Membuat video..." })
 
-      // 1. Request generate
-      let res = await fetch("https://api.magichour.ai/v1/video/generate", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
+      const res = await axios.post(
+        "https://api.magichour.ai/v1/video/generate",
+        {
           prompt: text,
           duration: 5,
           aspect_ratio: "9:16"
-        })
-      });
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${API_KEY}`,
+            "Content-Type": "application/json"
+          }
+        }
+      )
 
-      let data = await res.json();
-
-      if (!data.id) {
-        console.log(data);
-        return reply("❌ Gagal generate video");
+      const jobId = res.data?.id
+      if (!jobId) {
+        return sock.sendMessage(from, { text: "❌ Gagal generate video" })
       }
 
-      // 2. Polling
-      let videoUrl;
+      let videoUrl
       for (let i = 0; i < 15; i++) {
-        await new Promise(r => setTimeout(r, 4000));
+        await new Promise(r => setTimeout(r, 4000))
 
-        let check = await fetch(`https://api.magichour.ai/v1/video/status/${data.id}`, {
-          headers: {
-            "Authorization": `Bearer ${API_KEY}`
-          }
-        });
+        const check = await axios.get(
+          `https://api.magichour.ai/v1/video/status/${jobId}`,
+          { headers: { Authorization: `Bearer ${API_KEY}` } }
+        )
 
-        let result = await check.json();
-
-        if (result.status === "completed") {
-          videoUrl = result.result_url;
-          break;
+        if (check.data?.status === "completed") {
+          videoUrl = check.data.result_url
+          break
         }
       }
 
       if (!videoUrl) {
-        return reply("⏳ Masih diproses, coba lagi nanti");
+        return sock.sendMessage(from, { text: "⏳ Masih diproses, coba lagi nanti" })
       }
 
-      await m.reply({
+      await sock.sendMessage(from, {
         video: { url: videoUrl },
         caption: `🎥 Prompt: ${text}`
-      });
+      })
 
     } catch (err) {
-      console.log(err);
-      reply("❌ Error saat proses video");
+      console.log("VIDHR ERROR:", err?.message)
+      sock.sendMessage(from, { text: "❌ Error saat proses video" })
     }
   }
-};
+}

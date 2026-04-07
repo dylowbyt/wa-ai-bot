@@ -1,9 +1,9 @@
+const { downloadMediaMessage } = require("@whiskeysockets/baileys")
 const { OpenAI } = require("openai")
 const brain = require("../ai/brain")
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-// ===== VOICE MAP =====
 const VOICE_MAP = {
   brian:"onyx",
   amy:"nova",
@@ -14,11 +14,9 @@ const VOICE_MAP = {
   matthew:"fable"
 }
 
-// ===== TTS INDONESIA + EMOSI (FIXED) =====
 async function textToSpeech(text, voice = "Brian", persona = "default") {
   let oaiVoice = VOICE_MAP[(voice||"brian").toLowerCase()] || "alloy"
 
-  // ===== EMOTION DETECTOR
   let emotion = "normal"
   const lower = text.toLowerCase()
 
@@ -30,36 +28,27 @@ async function textToSpeech(text, voice = "Brian", persona = "default") {
     emotion = "sad"
   }
 
-  // ===== STYLE TEXT (NO "BACAKAN")
   let styled = text
 
-  // anime feel
   if (persona === "anime") {
-    styled = styled
-      .replace(/\.$/, "!")
-      .replace(/\?/g, "?!")
+    styled = styled.replace(/\.$/, "!").replace(/\?/g, "?!")
   }
 
-  // emotion effect
   if (emotion === "marah") {
     styled = styled.toUpperCase().replace(/\.$/, "!")
   }
-
   if (emotion === "happy") {
     styled = styled + " hehe~"
   }
-
   if (emotion === "sad") {
     styled = "..." + styled
   }
 
-  // ===== NATURAL DELAY
   styled = styled
     .replace(/,/g, ", ... ")
     .replace(/\./g, ". ... ")
     .replace(/!/g, "! ... ")
 
-  // ===== CLEAN (ANTI BUG LAMA)
   styled = styled
     .replace(/bacakan.*?:/gi, "")
     .replace(/dengan gaya.*?:/gi, "")
@@ -76,7 +65,6 @@ async function textToSpeech(text, voice = "Brian", persona = "default") {
   return Buffer.from(await audio.arrayBuffer())
 }
 
-// ===== IDENTITY =====
 let identity
 try {
   identity = require("../ai/identity")
@@ -99,21 +87,6 @@ module.exports = {
 
     let text = args.join(" ")
 
-    // ================= VN → TEXT
-    if (m.message?.audioMessage) {
-      try {
-        const buffer = await sock.downloadMediaMessage(m)
-        const res = await openai.audio.transcriptions.create({
-          file: buffer,
-          model: "whisper-1"
-        })
-        text = res.text
-      } catch (e) {
-        return sock.sendMessage(from, { text: "❌ Gagal baca suara" })
-      }
-    }
-
-    // ================= MODE
     if (text.startsWith("mode ")) {
       const val = text.split(" ")[1]
       if (val === "voice" || val === "text") {
@@ -123,7 +96,6 @@ module.exports = {
       return sock.sendMessage(from, { text: "❌ Mode tidak valid. Gunakan: voice / text" })
     }
 
-    // ================= VOICE
     if (text.startsWith("voice ")) {
       const val = text.split(" ")[1]
       const voice = val === "cewek" ? "Amy" : val === "cowok" ? "Brian" : val
@@ -131,20 +103,17 @@ module.exports = {
       return sock.sendMessage(from, { text: `✅ Voice diubah ke *${voice}*` })
     }
 
-    // ================= PERSONA
     if (text.startsWith("persona ")) {
       const val = text.split(" ")[1]
       brain.updateSettings(sender, { persona: val })
       return sock.sendMessage(from, { text: `✅ Persona diubah ke *${val}*` })
     }
 
-    // ================= RESET
     if (text === "reset") {
       brain.getMemory(sender).splice(0)
       return sock.sendMessage(from, { text: "🗑️ Memory direset!" })
     }
 
-    // ================= INFO
     if (text === "info") {
       const s = brain.getSettings(sender)
       return sock.sendMessage(from, {
@@ -157,7 +126,14 @@ module.exports = {
       })
     }
 
-    if (!text && !m.message?.imageMessage) {
+    const quoted =
+      m.message?.extendedTextMessage?.contextInfo?.quotedMessage
+
+    const directImage = m.message?.imageMessage
+    const quotedImage = quoted?.imageMessage
+    const hasImage = !!(directImage || quotedImage)
+
+    if (!text && !hasImage) {
       return sock.sendMessage(from, {
         text:
           "🤖 *Cara pakai .ai:*\n" +
@@ -168,13 +144,12 @@ module.exports = {
           "• `.ai persona santai/galak/anime/default`\n" +
           "• `.ai reset` — hapus memory\n" +
           "• `.ai info` — lihat setting\n" +
-          "• kirim gambar + .ai → analisa gambar"
+          "• kirim/reply gambar + `.ai` → analisa gambar"
       })
     }
 
     await sock.sendMessage(from, { text: "⏳..." })
 
-    // ================= SYSTEM PROMPT
     let systemPrompt = identity.sistemPrompt()
 
     if (userSetting.persona === "santai") systemPrompt += "\nJawab santai dan gaul."
@@ -188,11 +163,24 @@ module.exports = {
         userContent.push({ type: "text", text })
       }
 
-      if (m.message?.imageMessage) {
+      if (hasImage) {
         try {
-          const buffer = await sock.downloadMediaMessage(m)
+          const targetMsg = quotedImage
+            ? { key: m.key, message: quoted }
+            : m
+
+          const buffer = await downloadMediaMessage(
+            targetMsg,
+            "buffer",
+            {},
+            {
+              logger: console,
+              reuploadRequest: sock.updateMediaMessage
+            }
+          )
+
           const base64 = buffer.toString("base64")
-          const mime = m.message.imageMessage.mimetype || "image/jpeg"
+          const mime = directImage?.mimetype || quotedImage?.mimetype || "image/jpeg"
 
           userContent.push({
             type: "image_url",
@@ -201,8 +189,12 @@ module.exports = {
             }
           })
 
+          if (!text) {
+            userContent.unshift({ type: "text", text: "Analisis dan deskripsikan gambar ini dalam bahasa Indonesia" })
+          }
         } catch (e) {
-          console.log("Vision error:", e)
+          console.log("Vision download error:", e.message)
+          return sock.sendMessage(from, { text: "❌ Gagal membaca gambar" })
         }
       }
 
@@ -250,7 +242,7 @@ module.exports = {
 
     } catch (err) {
       console.log("AI plugin error:", err.message)
-      return sock.sendMessage(from, { text: "⚠️ AI error" })
+      return sock.sendMessage(from, { text: "⚠️ AI error, coba lagi nanti" })
     }
   }
 }

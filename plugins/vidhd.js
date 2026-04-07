@@ -1,71 +1,104 @@
-export default {
-  name: "vanime",
-  command: ["vanime"],
-  tags: ["ai"],
-  description: "Video jadi anime",
+const { downloadMediaMessage } = require("@whiskeysockets/baileys")
+const axios = require("axios")
+const FormData = require("form-data")
 
-  run: async (m, { reply }) => {
-    const API_KEY = process.env.MAGIC_HOUR_KEY;
-    if (!API_KEY) return reply("API KEY belum diset!");
+module.exports = {
+  name: "vidhd",
+  alias: [],
 
-    if (!m.quoted || !/video/.test(m.quoted.mimetype)) {
-      return reply("Reply video!");
+  async run(sock, m) {
+    const from = m.key.remoteJid
+
+    const API_KEY = process.env.MAGIC_HOUR_KEY
+    if (!API_KEY) {
+      return sock.sendMessage(from, { text: "❌ MAGIC_HOUR_KEY belum diset di ENV" })
     }
 
     try {
-      reply("🎌 Mengubah ke anime...");
+      const quoted =
+        m.message?.extendedTextMessage?.contextInfo?.quotedMessage
 
-      let media = await m.quoted.download();
+      const hasVideo =
+        m.message?.videoMessage ||
+        quoted?.videoMessage
 
-      let form = new FormData();
-      form.append("file", media, "video.mp4");
-
-      let up = await fetch("https://tmpfiles.org/api/v1/upload", {
-        method: "POST",
-        body: form
-      });
-
-      let upRes = await up.json();
-      let videoUrl = upRes.data.url.replace("tmpfiles.org/", "tmpfiles.org/dl/");
-
-      let res = await fetch("https://api.magichour.ai/v1/video/style", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          video_url: videoUrl,
-          style: "anime"
+      if (!hasVideo) {
+        return sock.sendMessage(from, {
+          text: "⚠️ Reply video dengan .vidhd"
         })
-      });
+      }
 
-      let data = await res.json();
+      await sock.sendMessage(from, { text: "🎌 Memproses video HD..." })
 
-      reply("⏳ Diproses...");
+      const targetMsg = quoted
+        ? { key: m.key, message: quoted }
+        : m
 
-      let resultUrl;
+      const buffer = await downloadMediaMessage(
+        targetMsg,
+        "buffer",
+        {},
+        {
+          logger: console,
+          reuploadRequest: sock.updateMediaMessage
+        }
+      )
+
+      const form = new FormData()
+      form.append("file", buffer, { filename: "video.mp4", contentType: "video/mp4" })
+
+      const up = await axios.post("https://tmpfiles.org/api/v1/upload", form, {
+        headers: form.getHeaders(),
+        timeout: 60000
+      })
+
+      const rawUrl = up.data?.data?.url
+      if (!rawUrl) throw new Error("Upload gagal")
+      const videoUrl = rawUrl.replace("tmpfiles.org/", "tmpfiles.org/dl/")
+
+      const res = await axios.post(
+        "https://api.magichour.ai/v1/video/style",
+        { video_url: videoUrl, style: "anime" },
+        {
+          headers: {
+            Authorization: `Bearer ${API_KEY}`,
+            "Content-Type": "application/json"
+          }
+        }
+      )
+
+      const jobId = res.data?.id
+      if (!jobId) throw new Error("Gagal memulai proses")
+
+      await sock.sendMessage(from, { text: "⏳ Diproses..." })
+
+      let resultUrl
       for (let i = 0; i < 15; i++) {
-        await new Promise(r => setTimeout(r, 4000));
+        await new Promise(r => setTimeout(r, 4000))
 
-        let check = await fetch(`https://api.magichour.ai/v1/video/status/${data.id}`, {
-          headers: { Authorization: `Bearer ${API_KEY}` }
-        });
+        const check = await axios.get(
+          `https://api.magichour.ai/v1/video/status/${jobId}`,
+          { headers: { Authorization: `Bearer ${API_KEY}` } }
+        )
 
-        let result = await check.json();
-        if (result.status === "completed") {
-          resultUrl = result.result_url;
-          break;
+        if (check.data?.status === "completed") {
+          resultUrl = check.data.result_url
+          break
         }
       }
 
-      if (!resultUrl) return reply("Masih diproses...");
+      if (!resultUrl) {
+        return sock.sendMessage(from, { text: "⏳ Masih diproses, coba lagi nanti" })
+      }
 
-      await m.reply({ video: { url: resultUrl } });
+      await sock.sendMessage(from, {
+        video: { url: resultUrl },
+        caption: "🔥 Video HD"
+      })
 
-    } catch (e) {
-      console.log(e);
-      reply("Error!");
+    } catch (err) {
+      console.log("VIDHD ERROR:", err?.message)
+      sock.sendMessage(from, { text: "❌ Gagal proses video" })
     }
   }
-};
+}

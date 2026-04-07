@@ -1,71 +1,110 @@
-export default {
+const { downloadMediaMessage } = require("@whiskeysockets/baileys")
+const axios = require("axios")
+const FormData = require("form-data")
+
+module.exports = {
   name: "vtalk",
-  command: ["vtalk"],
-  tags: ["ai"],
-  description: "Foto jadi ngomong",
+  alias: [],
 
-  run: async (m, { text, reply }) => {
-    const API_KEY = process.env.MAGIC_HOUR_KEY;
-    if (!API_KEY) return reply("API KEY belum diset!");
+  async run(sock, m, args) {
+    const from = m.key.remoteJid
 
-    if (!m.quoted || !/image/.test(m.quoted.mimetype)) {
-      return reply("Reply foto + teks\nContoh: .vtalk halo nama saya bot");
+    const API_KEY = process.env.MAGIC_HOUR_KEY
+    if (!API_KEY) {
+      return sock.sendMessage(from, { text: "❌ MAGIC_HOUR_KEY belum diset di ENV" })
     }
 
-    if (!text) return reply("Masukkan teks!");
+    const text = args.join(" ")
 
     try {
-      reply("🗣️ Membuat foto berbicara...");
+      const quoted =
+        m.message?.extendedTextMessage?.contextInfo?.quotedMessage
 
-      let media = await m.quoted.download();
+      const hasImage =
+        m.message?.imageMessage ||
+        quoted?.imageMessage
 
-      let form = new FormData();
-      form.append("file", media, "image.jpg");
-
-      let up = await fetch("https://tmpfiles.org/api/v1/upload", {
-        method: "POST",
-        body: form
-      });
-
-      let upRes = await up.json();
-      let imageUrl = upRes.data.url.replace("tmpfiles.org/", "tmpfiles.org/dl/");
-
-      let res = await fetch("https://api.magichour.ai/v1/video/talk", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          image_url: imageUrl,
-          text: text
+      if (!hasImage) {
+        return sock.sendMessage(from, {
+          text: "⚠️ Reply foto + teks\nContoh: .vtalk halo nama saya bot"
         })
-      });
+      }
 
-      let data = await res.json();
+      if (!text) {
+        return sock.sendMessage(from, {
+          text: "⚠️ Masukkan teks setelah .vtalk"
+        })
+      }
 
-      let resultUrl;
+      await sock.sendMessage(from, { text: "🗣️ Membuat foto berbicara..." })
+
+      const targetMsg = quoted
+        ? { key: m.key, message: quoted }
+        : m
+
+      const buffer = await downloadMediaMessage(
+        targetMsg,
+        "buffer",
+        {},
+        {
+          logger: console,
+          reuploadRequest: sock.updateMediaMessage
+        }
+      )
+
+      const form = new FormData()
+      form.append("file", buffer, { filename: "image.jpg", contentType: "image/jpeg" })
+
+      const up = await axios.post("https://tmpfiles.org/api/v1/upload", form, {
+        headers: form.getHeaders(),
+        timeout: 30000
+      })
+
+      const rawUrl = up.data?.data?.url
+      if (!rawUrl) throw new Error("Upload gagal")
+      const imageUrl = rawUrl.replace("tmpfiles.org/", "tmpfiles.org/dl/")
+
+      const res = await axios.post(
+        "https://api.magichour.ai/v1/video/talk",
+        { image_url: imageUrl, text },
+        {
+          headers: {
+            Authorization: `Bearer ${API_KEY}`,
+            "Content-Type": "application/json"
+          }
+        }
+      )
+
+      const jobId = res.data?.id
+      if (!jobId) throw new Error("Gagal memulai proses")
+
+      let resultUrl
       for (let i = 0; i < 15; i++) {
-        await new Promise(r => setTimeout(r, 4000));
+        await new Promise(r => setTimeout(r, 4000))
 
-        let check = await fetch(`https://api.magichour.ai/v1/video/status/${data.id}`, {
-          headers: { Authorization: `Bearer ${API_KEY}` }
-        });
+        const check = await axios.get(
+          `https://api.magichour.ai/v1/video/status/${jobId}`,
+          { headers: { Authorization: `Bearer ${API_KEY}` } }
+        )
 
-        let result = await check.json();
-        if (result.status === "completed") {
-          resultUrl = result.result_url;
-          break;
+        if (check.data?.status === "completed") {
+          resultUrl = check.data.result_url
+          break
         }
       }
 
-      if (!resultUrl) return reply("Masih diproses...");
+      if (!resultUrl) {
+        return sock.sendMessage(from, { text: "⏳ Masih diproses, coba lagi nanti" })
+      }
 
-      await m.reply({ video: { url: resultUrl } });
+      await sock.sendMessage(from, {
+        video: { url: resultUrl },
+        caption: "🗣️ Foto Berbicara"
+      })
 
-    } catch (e) {
-      console.log(e);
-      reply("Error!");
+    } catch (err) {
+      console.log("VTALK ERROR:", err?.message)
+      sock.sendMessage(from, { text: "❌ Error membuat foto berbicara" })
     }
   }
-};
+}
