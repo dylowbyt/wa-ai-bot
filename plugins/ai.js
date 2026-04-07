@@ -4,50 +4,46 @@ const brain = require("../ai/brain")
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-const VOICE_MAP = {
-  brian:"onyx",
-  amy:"nova",
-  cowok:"onyx",
-  cewek:"nova",
-  justin:"echo",
-  joanna:"shimmer",
-  matthew:"fable"
+// Suara otomatis berdasarkan persona
+// gpt-4o-mini-tts mendukung "instructions" untuk gaya bicara — lebih natural seperti dubbing
+const PERSONA_VOICE_CONFIG = {
+  default: {
+    voice: "nova",
+    instructions: "Bicara dengan nada hangat, natural, dan ramah dalam Bahasa Indonesia. Seperti orang yang berbicara langsung, bukan membaca teks. Jeda sewajarnya."
+  },
+  santai: {
+    voice: "fable",
+    instructions: "Bicara dengan nada santai dan kasual dalam Bahasa Indonesia. Seperti teman ngobrol yang asik. Nada rileks, tidak terburu-buru, sesekali ada sedikit keakraban."
+  },
+  galak: {
+    voice: "onyx",
+    instructions: "Bicara dengan nada tegas, lugas, dan berwibawa dalam Bahasa Indonesia. Suara dalam dan serius. Tidak basa-basi, langsung ke poin."
+  },
+  anime: {
+    voice: "shimmer",
+    instructions: "Bicara dengan nada ceria, playful, dan sedikit manja dalam Bahasa Indonesia. Seperti karakter anime perempuan yang energetik dan ekspresif. Nada naik-turun dengan semangat."
+  }
 }
 
-async function textToSpeech(text, voice = "Brian", persona = "default") {
-  let oaiVoice = VOICE_MAP[(voice||"brian").toLowerCase()] || "alloy"
+async function textToSpeech(text, persona = "default", voiceOverride = null) {
+  const config = PERSONA_VOICE_CONFIG[persona] || PERSONA_VOICE_CONFIG["default"]
+  const voice = voiceOverride || config.voice
 
-  let emotion = "normal"
+  // Pra-proses teks berdasarkan emosi yang terdeteksi
+  let styled = text
   const lower = text.toLowerCase()
 
   if (/anj|goblok|tolol|diam|apaan|apa sih|berisik/.test(lower)) {
-    emotion = "marah"
+    styled = styled.toUpperCase().replace(/\.$/, "!")
   } else if (/haha|wkwk|lol|ngakak|lucu/.test(lower)) {
-    emotion = "happy"
+    styled = styled + " hehe"
   } else if (/sedih|capek|lelah|kecewa|hiks/.test(lower)) {
-    emotion = "sad"
+    styled = "..." + styled
   }
-
-  let styled = text
 
   if (persona === "anime") {
     styled = styled.replace(/\.$/, "!").replace(/\?/g, "?!")
   }
-
-  if (emotion === "marah") {
-    styled = styled.toUpperCase().replace(/\.$/, "!")
-  }
-  if (emotion === "happy") {
-    styled = styled + " hehe~"
-  }
-  if (emotion === "sad") {
-    styled = "..." + styled
-  }
-
-  styled = styled
-    .replace(/,/g, ", ... ")
-    .replace(/\./g, ". ... ")
-    .replace(/!/g, "! ... ")
 
   styled = styled
     .replace(/bacakan.*?:/gi, "")
@@ -57,8 +53,9 @@ async function textToSpeech(text, voice = "Brian", persona = "default") {
 
   const audio = await openai.audio.speech.create({
     model: "gpt-4o-mini-tts",
-    voice: oaiVoice,
+    voice: voice,
     input: styled,
+    instructions: config.instructions,
     format: "opus"
   })
 
@@ -97,16 +94,30 @@ module.exports = {
     }
 
     if (text.startsWith("voice ")) {
-      const val = text.split(" ")[1]
-      const voice = val === "cewek" ? "Amy" : val === "cowok" ? "Brian" : val
-      brain.updateSettings(sender, { voice })
-      return sock.sendMessage(from, { text: `✅ Voice diubah ke *${voice}*` })
+      const val = text.split(" ").slice(1).join(" ").trim().toLowerCase()
+      if (val === "auto" || val === "otomatis") {
+        brain.updateSettings(sender, { voiceOverride: null })
+        return sock.sendMessage(from, { text: "✅ Suara kembali ke *otomatis* (ikut persona)" })
+      }
+      const validVoices = ["nova", "fable", "onyx", "shimmer", "echo", "alloy"]
+      if (validVoices.includes(val)) {
+        brain.updateSettings(sender, { voiceOverride: val })
+        return sock.sendMessage(from, { text: `✅ Suara di-override ke *${val}*` })
+      }
+      return sock.sendMessage(from, { text: `❌ Suara tidak valid. Pilih: ${validVoices.join(" / ")}` })
     }
 
     if (text.startsWith("persona ")) {
       const val = text.split(" ")[1]
-      brain.updateSettings(sender, { persona: val })
-      return sock.sendMessage(from, { text: `✅ Persona diubah ke *${val}*` })
+      const validPersona = ["default", "santai", "galak", "anime"]
+      if (validPersona.includes(val)) {
+        brain.updateSettings(sender, { persona: val })
+        const voiceInfo = { default: "Nova", santai: "Fable", galak: "Onyx", anime: "Shimmer" }
+        return sock.sendMessage(from, {
+          text: `✅ Persona diubah ke *${val}*\n🎙️ Suara otomatis: ${voiceInfo[val]}`
+        })
+      }
+      return sock.sendMessage(from, { text: "❌ Persona tidak valid. Pilih: default / santai / galak / anime" })
     }
 
     if (text === "reset") {
@@ -116,19 +127,21 @@ module.exports = {
 
     if (text === "info") {
       const s = brain.getSettings(sender)
+      const voiceInfo = { default: "Nova", santai: "Fable", galak: "Onyx", anime: "Shimmer" }
+      const activeVoice = s.voiceOverride
+        ? `${s.voiceOverride} (manual override)`
+        : `${voiceInfo[s.persona] || "Nova"} (otomatis dari persona)`
       return sock.sendMessage(from, {
         text:
           `📊 *Setting kamu:*\n` +
           `• Mode: ${s.mode}\n` +
-          `• Voice: ${s.voice}\n` +
           `• Persona: ${s.persona}\n` +
+          `• Suara aktif: ${activeVoice}\n` +
           `• Memory: ${(brain.getMemory(sender) || []).length} pesan`
       })
     }
 
-    const quoted =
-      m.message?.extendedTextMessage?.contextInfo?.quotedMessage
-
+    const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage
     const directImage = m.message?.imageMessage
     const quotedImage = quoted?.imageMessage
     const hasImage = !!(directImage || quotedImage)
@@ -140,8 +153,12 @@ module.exports = {
           "• `.ai <tanya>` — tanya AI\n" +
           "• `.ai mode voice` — mode suara\n" +
           "• `.ai mode text` — mode teks\n" +
-          "• `.ai voice cewek/cowok` — ganti suara\n" +
-          "• `.ai persona santai/galak/anime/default`\n" +
+          "• `.ai persona santai` — suara & gaya santai\n" +
+          "• `.ai persona galak` — suara & gaya tegas\n" +
+          "• `.ai persona anime` — suara & gaya anime manja\n" +
+          "• `.ai persona default` — suara & gaya normal\n" +
+          "• `.ai voice nova/fable/onyx/shimmer` — override suara\n" +
+          "• `.ai voice auto` — suara otomatis ikut persona\n" +
           "• `.ai reset` — hapus memory\n" +
           "• `.ai info` — lihat setting\n" +
           "• kirim/reply gambar + `.ai` → analisa gambar"
@@ -150,11 +167,19 @@ module.exports = {
 
     await sock.sendMessage(from, { text: "⏳..." })
 
-    let systemPrompt = identity.sistemPrompt()
+    // Gunakan system prompt berdasarkan persona
+    const PERSONA_PROMPTS = brain.PERSONA_PROMPTS || {}
+    let systemPrompt = identity.sistemPrompt
+      ? identity.sistemPrompt()
+      : "Kamu adalah AI WhatsApp yang santai dan helpful."
 
-    if (userSetting.persona === "santai") systemPrompt += "\nJawab santai dan gaul."
-    if (userSetting.persona === "galak") systemPrompt += "\nJawab tegas dan galak."
-    if (userSetting.persona === "anime") systemPrompt += "\nJawab seperti karakter anime."
+    if (PERSONA_PROMPTS[userSetting.persona]) {
+      systemPrompt = PERSONA_PROMPTS[userSetting.persona]
+    } else {
+      if (userSetting.persona === "santai") systemPrompt += "\nJawab santai dan gaul."
+      if (userSetting.persona === "galak") systemPrompt += "\nJawab tegas dan galak."
+      if (userSetting.persona === "anime") systemPrompt += "\nJawab seperti karakter anime."
+    }
 
     try {
       let userContent = []
@@ -184,9 +209,7 @@ module.exports = {
 
           userContent.push({
             type: "image_url",
-            image_url: {
-              url: `data:${mime};base64,${base64}`
-            }
+            image_url: { url: `data:${mime};base64,${base64}` }
           })
 
           if (!text) {
@@ -207,26 +230,21 @@ module.exports = {
         messages: [
           { role: "system", content: systemPrompt },
           ...history,
-          {
-            role: "user",
-            content: userContent
-          }
+          { role: "user", content: userContent }
         ],
         temperature: 0.7
       })
 
       const reply = res.choices[0].message.content
-
       brain.addBotReply(sender, reply)
 
       if (userSetting.mode === "voice") {
         try {
           const audioBuffer = await textToSpeech(
             reply,
-            userSetting.voice,
-            userSetting.persona
+            userSetting.persona,
+            userSetting.voiceOverride || null
           )
-
           return sock.sendMessage(from, {
             audio: audioBuffer,
             mimetype: "audio/ogg; codecs=opus",
