@@ -9,24 +9,45 @@ const path = require("path")
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-const VOICE_MAP = {
-  brian: "onyx",
-  amy: "nova",
-  cowok: "onyx",
-  cewek: "nova",
-  justin: "echo",
-  joanna: "shimmer",
+// Suara per persona — otomatis menyesuaikan karakter
+// nova    = perempuan, hangat & friendly       → default
+// fable   = perempuan, lembut & storytelling   → santai
+// onyx    = laki-laki, dalam & tegas           → galak
+// shimmer = perempuan, cerah & energetik       → anime
+const PERSONA_VOICE_MAP = {
+  default: { voice: "nova",    speed: 1.0  },
+  santai:  { voice: "fable",   speed: 0.95 },
+  galak:   { voice: "onyx",    speed: 1.05 },
+  anime:   { voice: "shimmer", speed: 1.15 }
+}
+
+// Fallback jika user override suara manual (command .ai voice)
+const VOICE_ALIAS_MAP = {
+  brian:   "onyx",
+  amy:     "nova",
+  cowok:   "onyx",
+  cewek:   "nova",
+  justin:  "echo",
+  joanna:  "shimmer",
   matthew: "fable",
-  alloy: "alloy",
-  echo: "echo",
-  fable: "fable",
-  onyx: "onyx",
-  nova: "nova",
+  alloy:   "alloy",
+  echo:    "echo",
+  fable:   "fable",
+  onyx:    "onyx",
+  nova:    "nova",
   shimmer: "shimmer"
 }
 
-function resolveVoice(voice = "Brian") {
-  return VOICE_MAP[(voice || "brian").toLowerCase()] || "alloy"
+function resolveVoice(voice = "nova") {
+  return VOICE_ALIAS_MAP[(voice || "nova").toLowerCase()] || "nova"
+}
+
+// Dapatkan konfigurasi suara berdasarkan persona
+function getVoiceConfig(persona, voiceOverride) {
+  if (voiceOverride) {
+    return { voice: resolveVoice(voiceOverride), speed: 1.0 }
+  }
+  return PERSONA_VOICE_MAP[persona] || PERSONA_VOICE_MAP["default"]
 }
 
 // Konversi MP3 buffer → OGG Opus buffer (wajib untuk WA PTT)
@@ -60,21 +81,22 @@ function mp3ToOgg(mp3Buffer) {
   }
 }
 
-async function textToSpeech(text, voice = "Brian") {
-  const oaiVoice = resolveVoice(voice)
+// persona: "default" | "santai" | "galak" | "anime"
+// voiceOverride: string | null (kalau user set manual via .ai voice)
+async function textToSpeech(text, persona = "default", voiceOverride = null) {
+  const { voice, speed } = getVoiceConfig(persona, voiceOverride)
 
-  // Ambil audio MP3 dari OpenAI
+  // tts-1-hd = kualitas lebih natural seperti dubbing manusia asli
   const mp3 = await openai.audio.speech.create({
-    model: "tts-1",
-    voice: oaiVoice,
-    input: text
+    model: "tts-1-hd",
+    voice: voice,
+    input: text,
+    speed: speed
   })
 
   const mp3Buffer = Buffer.from(await mp3.arrayBuffer())
-
-  // Konversi ke OGG Opus supaya bisa diputar di WA
   const oggBuffer = mp3ToOgg(mp3Buffer)
   return oggBuffer
 }
 
-module.exports = { textToSpeech, resolveVoice }
+module.exports = { textToSpeech, resolveVoice, getVoiceConfig, PERSONA_VOICE_MAP }
