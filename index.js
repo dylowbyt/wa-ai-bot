@@ -33,15 +33,35 @@ setInterval(() => {
   if (processed.size > 5000) processed.clear()
 }, 300000)
 
-// ===== TTS =====
-const VOICE_MAP = { brian:"onyx", amy:"nova", cowok:"onyx", cewek:"nova", justin:"echo", joanna:"shimmer", matthew:"fable" }
-async function textToSpeech(text, voice = "Brian") {
-  const oaiVoice = VOICE_MAP[(voice||"brian").toLowerCase()] || "alloy"
+// ===== TTS — suara otomatis ikut persona =====
+const PERSONA_VOICE_CONFIG = {
+  default: {
+    voice: "nova",
+    instructions: "Bicara dengan nada hangat, natural, dan ramah dalam Bahasa Indonesia. Seperti orang yang berbicara langsung, bukan membaca teks. Jeda sewajarnya."
+  },
+  santai: {
+    voice: "fable",
+    instructions: "Bicara dengan nada santai dan kasual dalam Bahasa Indonesia. Seperti teman ngobrol yang asik. Nada rileks, tidak terburu-buru, sesekali ada sedikit keakraban."
+  },
+  galak: {
+    voice: "onyx",
+    instructions: "Bicara dengan nada tegas, lugas, dan berwibawa dalam Bahasa Indonesia. Suara dalam dan serius. Tidak basa-basi, langsung ke poin."
+  },
+  anime: {
+    voice: "shimmer",
+    instructions: "Bicara dengan nada ceria, playful, dan sedikit manja dalam Bahasa Indonesia. Seperti karakter anime perempuan yang energetik dan ekspresif. Nada naik-turun dengan semangat."
+  }
+}
+
+async function textToSpeech(text, persona = "default", voiceOverride = null) {
+  const config = PERSONA_VOICE_CONFIG[persona] || PERSONA_VOICE_CONFIG["default"]
+  const voice = voiceOverride || config.voice
   const audio = await openai.audio.speech.create({
-    model:"gpt-4o-mini-tts",
-    voice:oaiVoice,
-    input:` ${text}`,
-    format:"opus"
+    model: "gpt-4o-mini-tts",
+    voice: voice,
+    input: text,
+    instructions: config.instructions,
+    format: "opus"
   })
   return Buffer.from(await audio.arrayBuffer())
 }
@@ -52,7 +72,11 @@ async function sendReply(sock, from, sender, text) {
 
   if (userSetting.mode === "voice") {
     try {
-      const audioBuffer = await textToSpeech(text, userSetting.voice)
+      const audioBuffer = await textToSpeech(
+        text,
+        userSetting.persona || "default",
+        userSetting.voiceOverride || null
+      )
       await sock.sendMessage(from, {
         audio: audioBuffer,
         mimetype: "audio/ogg; codecs=opus",
@@ -251,17 +275,14 @@ async function startBot() {
             identity = null
           }
 
-          let systemPrompt = identity && identity.sistemPrompt
-            ? identity.sistemPrompt()
-            : "Kamu adalah AI WhatsApp yang santai dan helpful."
+          const { PERSONA_PROMPTS } = require("./ai/brain")
 
-          if (userSetting.persona === "santai") {
-            systemPrompt += " Jawab santai dan gaul."
-          } else if (userSetting.persona === "galak") {
-            systemPrompt += " Jawab tegas dan galak."
-          } else if (userSetting.persona === "anime") {
-            systemPrompt += " Jawab seperti karakter anime."
-          }
+          let systemPrompt = PERSONA_PROMPTS && PERSONA_PROMPTS[userSetting.persona]
+            ? PERSONA_PROMPTS[userSetting.persona]
+            : (identity && identity.sistemPrompt
+                ? identity.sistemPrompt()
+                : "Kamu adalah AI WhatsApp yang santai dan helpful."
+              )
 
           let userContent = []
 
