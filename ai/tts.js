@@ -9,19 +9,13 @@ const path = require("path")
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-// Suara per persona — otomatis menyesuaikan karakter
-// nova    = perempuan, hangat & friendly       → default
-// fable   = perempuan, lembut & storytelling   → santai
-// onyx    = laki-laki, dalam & tegas           → galak
-// shimmer = perempuan, cerah & energetik       → anime
 const PERSONA_VOICE_MAP = {
   default: { voice: "nova",    speed: 1.0  },
   santai:  { voice: "fable",   speed: 0.95 },
-  galak:   { voice: "onyx",    speed: 1.05 },
-  anime:   { voice: "shimmer", speed: 1.15 }
+  anime:   { voice: "shimmer", speed: 1.0  },
+  manja:   { voice: "alloy",   speed: 0.92 }
 }
 
-// Fallback jika user override suara manual (command .ai voice)
 const VOICE_ALIAS_MAP = {
   brian:   "onyx",
   amy:     "nova",
@@ -42,7 +36,6 @@ function resolveVoice(voice = "nova") {
   return VOICE_ALIAS_MAP[(voice || "nova").toLowerCase()] || "nova"
 }
 
-// Dapatkan konfigurasi suara berdasarkan persona
 function getVoiceConfig(persona, voiceOverride) {
   if (voiceOverride) {
     return { voice: resolveVoice(voiceOverride), speed: 1.0 }
@@ -50,7 +43,6 @@ function getVoiceConfig(persona, voiceOverride) {
   return PERSONA_VOICE_MAP[persona] || PERSONA_VOICE_MAP["default"]
 }
 
-// Konversi MP3 buffer → OGG Opus buffer (wajib untuk WA PTT)
 function mp3ToOgg(mp3Buffer) {
   const id = crypto.randomBytes(6).toString("hex")
   const tmpIn = path.join(os.tmpdir(), `tts_${id}.mp3`)
@@ -81,12 +73,9 @@ function mp3ToOgg(mp3Buffer) {
   }
 }
 
-// persona: "default" | "santai" | "galak" | "anime"
-// voiceOverride: string | null (kalau user set manual via .ai voice)
 async function textToSpeech(text, persona = "default", voiceOverride = null) {
   const { voice, speed } = getVoiceConfig(persona, voiceOverride)
 
-  // tts-1-hd = kualitas lebih natural seperti dubbing manusia asli
   const mp3 = await openai.audio.speech.create({
     model: "tts-1-hd",
     voice: voice,
