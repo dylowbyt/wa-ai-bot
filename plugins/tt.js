@@ -24,33 +24,92 @@ module.exports = {
 
       let videoUrl = null
 
-      try {
-        const r1 = await axios.get(
-          `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`,
-          { timeout: 15000 }
-        )
-        videoUrl = r1.data?.video?.noWatermark || r1.data?.video?.url || r1.data?.url
-      } catch {}
-
+      // API 1: tikwm.com — paling stabil
       if (!videoUrl) {
         try {
-          const r2 = await axios.get(
+          const r = await axios.get(
+            `https://tikwm.com/api/?url=${encodeURIComponent(url)}`,
+            { timeout: 15000 }
+          )
+          videoUrl = r.data?.data?.play || r.data?.data?.wmplay
+        } catch {}
+      }
+
+      // API 2: tiklydown
+      if (!videoUrl) {
+        try {
+          const r = await axios.get(
+            `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`,
+            { timeout: 15000 }
+          )
+          videoUrl = r.data?.video?.noWatermark || r.data?.video?.url || r.data?.url
+        } catch {}
+      }
+
+      // API 3: siputzx
+      if (!videoUrl) {
+        try {
+          const r = await axios.get(
             `https://api.siputzx.my.id/api/dl/tiktok?url=${encodeURIComponent(url)}`,
             { timeout: 15000 }
           )
-          videoUrl = r2.data?.data?.play || r2.data?.data?.wmplay
+          videoUrl = r.data?.data?.play || r.data?.data?.wmplay
+        } catch {}
+      }
+
+      // API 4: ryzendesu
+      if (!videoUrl) {
+        try {
+          const r = await axios.get(
+            `https://api.ryzendesu.vip/api/downloader/ttdl?url=${encodeURIComponent(url)}`,
+            { timeout: 15000 }
+          )
+          videoUrl = r.data?.data?.play || r.data?.data?.video
+        } catch {}
+      }
+
+      // API 5: betabotz
+      if (!videoUrl) {
+        try {
+          const r = await axios.get(
+            `https://api.betabotz.eu.org/api/download/tiktok?url=${encodeURIComponent(url)}&apikey=beta`,
+            { timeout: 15000 }
+          )
+          videoUrl = r.data?.result?.play || r.data?.result?.url
+        } catch {}
+      }
+
+      // API 6: nexoracle
+      if (!videoUrl) {
+        try {
+          const r = await axios.get(
+            `https://api.nexoracle.com/downloader/tiktok?apikey=free&url=${encodeURIComponent(url)}`,
+            { timeout: 15000 }
+          )
+          videoUrl = r.data?.result?.play || r.data?.result?.url
+        } catch {}
+      }
+
+      // API 7: surabaya
+      if (!videoUrl) {
+        try {
+          const r = await axios.get(
+            `https://api.surabaya.eu.org/api/dl/tiktok?url=${encodeURIComponent(url)}`,
+            { timeout: 15000 }
+          )
+          videoUrl = r.data?.data?.play || r.data?.data?.url
         } catch {}
       }
 
       if (!videoUrl) {
         return sock.sendMessage(from, {
-          text: "❌ Gagal download TikTok\nServer API sedang down, coba lagi nanti"
+          text: "❌ Gagal download TikTok\nSemua server sedang down, coba lagi nanti"
         })
       }
 
       await sock.sendMessage(from, {
         video: { url: videoUrl },
-        caption: "TikTok Download"
+        caption: "✅ TikTok Download"
       })
 
     } catch (err) {

@@ -20,31 +20,90 @@ module.exports = {
     }
 
     try {
-      await sock.sendMessage(from, { text: "⏳ Downloading video..." })
+      await sock.sendMessage(from, { text: "⏳ Downloading video YouTube..." })
 
       let videoUrl = null
 
-      try {
-        const r1 = await axios.get(
-          `https://api.cobadeh.xyz/ytdl/mp4?url=${encodeURIComponent(url)}`,
-          { timeout: 20000 }
-        )
-        videoUrl = r1.data?.download || r1.data?.url || r1.data?.link
-      } catch {}
-
+      // API 1: ryzendesu
       if (!videoUrl) {
         try {
-          const r2 = await axios.get(
-            `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=mp4`,
-            { timeout: 20000 }
+          const r = await axios.get(
+            `https://api.ryzendesu.vip/api/downloader/ytmp4?url=${encodeURIComponent(url)}`,
+            { timeout: 25000 }
           )
-          videoUrl = r2.data?.url
+          videoUrl = r.data?.url || r.data?.download || r.data?.link
+        } catch {}
+      }
+
+      // API 2: siputzx
+      if (!videoUrl) {
+        try {
+          const r = await axios.get(
+            `https://api.siputzx.my.id/api/dl/ytmp4?url=${encodeURIComponent(url)}`,
+            { timeout: 25000 }
+          )
+          videoUrl = r.data?.data?.url || r.data?.data?.download || r.data?.url
+        } catch {}
+      }
+
+      // API 3: cobadeh
+      if (!videoUrl) {
+        try {
+          const r = await axios.get(
+            `https://api.cobadeh.xyz/ytdl/mp4?url=${encodeURIComponent(url)}`,
+            { timeout: 25000 }
+          )
+          videoUrl = r.data?.download || r.data?.url || r.data?.link
+        } catch {}
+      }
+
+      // API 4: betabotz
+      if (!videoUrl) {
+        try {
+          const r = await axios.get(
+            `https://api.betabotz.eu.org/api/download/ytmp4?url=${encodeURIComponent(url)}&apikey=beta`,
+            { timeout: 25000 }
+          )
+          videoUrl = r.data?.result?.url || r.data?.result?.download
+        } catch {}
+      }
+
+      // API 5: nexoracle
+      if (!videoUrl) {
+        try {
+          const r = await axios.get(
+            `https://api.nexoracle.com/downloader/ytmp4?apikey=free&url=${encodeURIComponent(url)}`,
+            { timeout: 25000 }
+          )
+          videoUrl = r.data?.result?.url || r.data?.result?.download
+        } catch {}
+      }
+
+      // API 6: surabaya
+      if (!videoUrl) {
+        try {
+          const r = await axios.get(
+            `https://api.surabaya.eu.org/api/dl/ytmp4?url=${encodeURIComponent(url)}`,
+            { timeout: 25000 }
+          )
+          videoUrl = r.data?.data?.url || r.data?.data?.download
+        } catch {}
+      }
+
+      // API 7: loader.to
+      if (!videoUrl) {
+        try {
+          const r = await axios.get(
+            `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=mp4`,
+            { timeout: 25000 }
+          )
+          videoUrl = r.data?.url
         } catch {}
       }
 
       if (!videoUrl) {
         return sock.sendMessage(from, {
-          text: "❌ Gagal download video\nServer API lagi down, coba lagi nanti"
+          text: "❌ Gagal download video\nSemua server sedang down, coba lagi nanti"
         })
       }
 
