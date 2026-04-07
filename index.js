@@ -158,9 +158,22 @@ async function startBot() {
       text = text.trim()
 
       const isGroup = from.endsWith("@g.us")
-      if (isGroup && !text.startsWith(".")) return
-
       const sender = m.key.participant || m.key.remoteJid
+
+      // ===== AUTOPILOT CHECK (semua pesan grup) =====
+      if (isGroup) {
+        try {
+          const autopilot = require("./plugins/autopilot")
+          if (autopilot?.check) {
+            const blocked = await autopilot.check(sock, m, { text, sender, from, imageBuffer })
+            if (blocked) return
+          }
+        } catch (e) {
+          console.log("Autopilot load error:", e.message)
+        }
+      }
+
+      if (isGroup && !text.startsWith(".")) return
 
       // ===== IMAGE DETECT =====
       const directImage = m.message?.imageMessage
