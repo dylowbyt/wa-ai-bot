@@ -1,25 +1,28 @@
 /**
- * premium.js — Sistem token & pembayaran otomatis via Tripay
+ * premium.js — Sistem token & pembayaran otomatis via Midtrans Snap
  *
  * Commands:
- *   .premium            → lihat saldo & daftar paket
- *   .buy basic/medium/pro → buat transaksi Tripay otomatis
- *   .cekbayar <ref>     → cek status bayar manual
- *   .addtoken <no> <jml> → admin: tambah token manual
+ *   .premium              → lihat saldo & daftar paket
+ *   .buy basic/medium/pro → buat transaksi Midtrans otomatis
+ *   .cekbayar <ref>       → cek status bayar manual
+ *   .addtoken <no> <jml>  → admin: tambah token manual
+ *
+ * ENV yang dibutuhkan:
+ *   MIDTRANS_SERVER_KEY   — Server key dari dashboard Midtrans
+ *   MIDTRANS_SANDBOX      — "true" untuk sandbox/testing, "false" untuk live
+ *   ADMIN_NUMBER          — Nomor WA admin (format: 628xxx)
+ *   PAYMENT_INFO          — (opsional) Pesan manual jika Midtrans belum diset
  */
 
 const axios  = require("axios")
-const crypto = require("crypto")
-const { getTokens, addTokens }           = require("../ai/tokendb")
-const { addPendingPayment, getByReference, updateStatus } = require("../ai/paymentdb")
+const { getTokens, addTokens }                              = require("../ai/tokendb")
+const { addPendingPayment, getByReference, updateStatus }   = require("../ai/paymentdb")
 
-const TRIPAY_API_KEY     = process.env.TRIPAY_API_KEY
-const TRIPAY_PRIVATE_KEY = process.env.TRIPAY_PRIVATE_KEY
-const TRIPAY_MERCHANT_CODE = process.env.TRIPAY_MERCHANT_CODE
-const TRIPAY_CHANNEL     = process.env.TRIPAY_CHANNEL || "QRISONE"
-const TRIPAY_BASE_URL    = process.env.TRIPAY_SANDBOX === "true"
-  ? "https://tripay.co.id/api-sandbox"
-  : "https://tripay.co.id/api"
+const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY
+const IS_SANDBOX          = process.env.MIDTRANS_SANDBOX === "true"
+const SNAP_BASE_URL       = IS_SANDBOX
+  ? "https://app.sandbox.midtrans.com/snap/v1"
+  : "https://app.midtrans.com/snap/v1"
 
 const ADMIN_NUMBER = process.env.ADMIN_NUMBER || "6281234567890"
 
@@ -37,64 +40,65 @@ function makeRef(pkg) {
   return `TKN-${pkg.toUpperCase()}-${Date.now()}`
 }
 
-async function createTripayInvoice({ reference, pkg, userPhone }) {
-  const selected = PACKAGES[pkg]
+function midtransAuthHeader() {
+  const encoded = Buffer.from(MIDTRANS_SERVER_KEY + ":").toString("base64")
+  return `Basic ${encoded}`
+}
 
-  const signature = crypto
-    .createHmac("sha256", TRIPAY_PRIVATE_KEY)
-    .update(TRIPAY_MERCHANT_CODE + reference + selected.price)
-    .digest("hex")
+async function createMidtransTransaction({ reference, pkg, userPhone }) {
+  const selected    = PACKAGES[pkg]
+  const expiredDate = new Date(Date.now() + 2 * 60 * 60 * 1000)
 
   const payload = {
-    method:          TRIPAY_CHANNEL,
-    merchant_ref:    reference,
-    amount:          selected.price,
-    customer_name:   userPhone,
-    customer_email:  `${userPhone}@wa.bot`,
-    customer_phone:  userPhone,
-    order_items: [
+    transaction_details: {
+      order_id:     reference,
+      gross_amount: selected.price
+    },
+    customer_details: {
+      first_name: userPhone,
+      phone:      userPhone,
+      email:      `${userPhone}@wa.bot`
+    },
+    item_details: [
       {
-        name:      `Token Premium ${selected.label}`,
-        price:     selected.price,
-        quantity:  1
+        id:       pkg,
+        name:     `Token Premium ${selected.label}`,
+        price:    selected.price,
+        quantity: 1
       }
     ],
-    signature,
-    expired_time: Math.floor(Date.now() / 1000) + (2 * 60 * 60)
+    expiry: {
+      start_time: expiredDate.toISOString().replace("T", " ").slice(0, 19) + " +0700",
+      unit:       "hours",
+      duration:   2
+    }
   }
 
   const res = await axios.post(
-    `${TRIPAY_BASE_URL}/transaction/create`,
+    `${SNAP_BASE_URL}/transactions`,
     payload,
     {
       headers: {
-        Authorization: `Bearer ${TRIPAY_API_KEY}`,
+        Authorization:  midtransAuthHeader(),
         "Content-Type": "application/json"
       }
     }
   )
 
-  if (!res.data?.success) {
-    throw new Error(res.data?.message || "Gagal buat transaksi Tripay")
-  }
-
-  return res.data.data
+  return res.data
 }
 
-async function fetchTripayStatus(reference) {
-  const signature = crypto
-    .createHmac("sha256", TRIPAY_PRIVATE_KEY)
-    .update(reference)
-    .digest("hex")
+async function fetchMidtransStatus(reference) {
+  const BASE = IS_SANDBOX
+    ? "https://api.sandbox.midtrans.com/v2"
+    : "https://api.midtrans.com/v2"
 
-  const res = await axios.get(`${TRIPAY_BASE_URL}/transaction/detail`, {
-    params:  { reference },
+  const res = await axios.get(`${BASE}/${reference}/status`, {
     headers: {
-      Authorization: `Bearer ${TRIPAY_API_KEY}`,
-      "X-Tripay-Signature": signature
+      Authorization: midtransAuthHeader()
     }
   })
-  return res.data?.data
+  return res.data
 }
 
 module.exports = {
@@ -146,7 +150,7 @@ module.exports = {
       const selected  = PACKAGES[pkg]
       const userPhone = sender.replace("@s.whatsapp.net", "")
 
-      if (!TRIPAY_API_KEY || !TRIPAY_PRIVATE_KEY || !TRIPAY_MERCHANT_CODE) {
+      if (!MIDTRANS_SERVER_KEY) {
         return sock.sendMessage(from, {
           text:
             `💎 *Paket ${selected.label}*\n\n` +
@@ -157,24 +161,22 @@ module.exports = {
         })
       }
 
-      await sock.sendMessage(from, { text: "⏳ Membuat link pembayaran..." })
+      await sock.sendMessage(from, { text: "⏳ Membuat link pembayaran Midtrans..." })
 
       try {
         const reference = makeRef(pkg)
-        const trx       = await createTripayInvoice({ reference, pkg, userPhone })
+        const trx       = await createMidtransTransaction({ reference, pkg, userPhone })
+        const payUrl    = trx.redirect_url
+        const expiredAt = new Date(Date.now() + 2 * 60 * 60 * 1000)
+          .toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })
 
         addPendingPayment({
           reference,
           userId:    sender,
           tokens:    selected.tokens,
           amount:    selected.price,
-          expiredAt: new Date(trx.expired_time * 1000).toISOString()
+          expiredAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
         })
-
-        const paymentCode = trx.pay_code || trx.qr_string || "-"
-        const payUrl      = trx.checkout_url || "-"
-        const expiredAt   = new Date(trx.expired_time * 1000)
-          .toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })
 
         return sock.sendMessage(from, {
           text:
@@ -184,9 +186,8 @@ module.exports = {
             `🔖 Referensi: \`${reference}\`\n\n` +
             `━━━━━━━━━━━━━━━━━━━━\n` +
             `💳 *Cara Bayar:*\n\n` +
-            (TRIPAY_CHANNEL === "QRISONE"
-              ? `📷 Scan QRIS di link berikut:\n${payUrl}\n\n`
-              : `🏦 Kode Bayar: *${paymentCode}*\n\n`) +
+            `🔗 Klik link berikut untuk bayar:\n${payUrl}\n\n` +
+            `📱 Tersedia: QRIS, Transfer Bank, GoPay, OVO, Dana, dll\n\n` +
             `⏰ Berlaku sampai: ${expiredAt} WIB\n\n` +
             `━━━━━━━━━━━━━━━━━━━━\n` +
             `✅ Token otomatis masuk setelah bayar!\n` +
@@ -194,13 +195,13 @@ module.exports = {
         })
 
       } catch (err) {
-        console.log("[premium] Tripay error:", err?.response?.data || err?.message)
+        console.log("[premium] Midtrans error:", err?.response?.data || err?.message)
         return sock.sendMessage(from, {
           text:
             `❌ Gagal membuat link pembayaran.\n\n` +
             `Coba lagi atau hubungi admin:\n` +
             `wa.me/${ADMIN_NUMBER}\n\n` +
-            `Error: ${err?.response?.data?.message || err?.message}`
+            `Error: ${err?.response?.data?.error_messages?.[0] || err?.message}`
         })
       }
     }
@@ -226,10 +227,12 @@ module.exports = {
       }
 
       try {
-        await sock.sendMessage(from, { text: "🔍 Mengecek status pembayaran..." })
-        const trx = await fetchTripayStatus(reference)
+        await sock.sendMessage(from, { text: "🔍 Mengecek status pembayaran Midtrans..." })
+        const trx = await fetchMidtransStatus(reference)
 
-        if (trx?.status === "PAID") {
+        const settlementStatuses = ["settlement", "capture"]
+
+        if (settlementStatuses.includes(trx?.transaction_status)) {
           updateStatus(reference, "PAID")
           const newTotal = addTokens(local.userId, local.tokens)
           return sock.sendMessage(from, {
@@ -242,10 +245,11 @@ module.exports = {
         }
 
         const statusLabel = {
-          UNPAID:  "⏳ Belum dibayar",
-          EXPIRED: "❌ Kadaluarsa",
-          FAILED:  "❌ Gagal"
-        }[trx?.status] || trx?.status
+          pending: "⏳ Menunggu pembayaran",
+          expire:  "❌ Kadaluarsa",
+          cancel:  "❌ Dibatalkan",
+          deny:    "❌ Ditolak"
+        }[trx?.transaction_status] || trx?.transaction_status
 
         return sock.sendMessage(from, {
           text:
