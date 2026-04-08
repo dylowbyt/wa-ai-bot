@@ -46,8 +46,7 @@ function midtransAuthHeader() {
 }
 
 async function createMidtransTransaction({ reference, pkg, userPhone }) {
-  const selected    = PACKAGES[pkg]
-  const expiredDate = new Date(Date.now() + 2 * 60 * 60 * 1000)
+  const selected = PACKAGES[pkg]
 
   const payload = {
     transaction_details: {
@@ -56,8 +55,7 @@ async function createMidtransTransaction({ reference, pkg, userPhone }) {
     },
     customer_details: {
       first_name: userPhone,
-      phone:      userPhone,
-      email:      `${userPhone}@gmail.com`
+      phone:      userPhone
     },
     item_details: [
       {
@@ -66,12 +64,7 @@ async function createMidtransTransaction({ reference, pkg, userPhone }) {
         price:    selected.price,
         quantity: 1
       }
-    ],
-    expiry: {
-      start_time: expiredDate.toISOString().replace("T", " ").slice(0, 19) + " +0700",
-      unit:       "hours",
-      duration:   2
-    }
+    ]
   }
 
   const res = await axios.post(
