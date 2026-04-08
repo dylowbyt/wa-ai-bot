@@ -9,7 +9,7 @@ const path  = require("path")
 
 const API_KEY      = process.env.STORYNOTE_API_KEY
 const CACHE_PATH   = path.resolve(__dirname, "../data/storynote_project.json")
-const BASE_URL     = "https://app.storynote.ai/api/v1"
+const BASE_URL     = process.env.STORYNOTE_BASE_URL || "https://api.storynote.ai/v1"
 
 function getHeaders() {
   return {
