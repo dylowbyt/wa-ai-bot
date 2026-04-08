@@ -6,7 +6,7 @@ const openai = new OpenAI({
 
 module.exports = {
   name: "image",
-  alias: ["img"],
+  alias: ["imgfree"],
 
   async run(sock, m) {
     const from = m.key.remoteJid
