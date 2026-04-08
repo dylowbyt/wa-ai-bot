@@ -43,7 +43,10 @@ async function getProjectId() {
   )
 
   const projectId = res.data?.id || res.data?.projectId || res.data?.data?.id
-  if (!projectId) throw new Error("Gagal mendapat projectId dari StorynoteAI")
+  if (!projectId) {
+    console.log("[Storynote] Response POST /projects:", JSON.stringify(res.data))
+    throw new Error("Gagal mendapat projectId dari StorynoteAI")
+  }
 
   saveProjectId(projectId)
   return projectId
