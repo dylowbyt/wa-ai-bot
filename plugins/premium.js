@@ -57,7 +57,7 @@ async function createMidtransTransaction({ reference, pkg, userPhone }) {
     customer_details: {
       first_name: userPhone,
       phone:      userPhone,
-      email:      `${userPhone}@wa.bot`
+      email:      `${userPhone}@gmail.com`
     },
     item_details: [
       {
