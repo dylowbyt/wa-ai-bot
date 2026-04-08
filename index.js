@@ -21,6 +21,7 @@ const {
 } = require("./ai/brain")
 
 const { startGempaMonitor } = require("./ai/gempaAlert")
+const { startPaymentChecker } = require("./ai/paymentchecker")
 
 const OpenAI = require("openai")
 const openai = new OpenAI({
@@ -121,6 +122,7 @@ async function startBot() {
     if (connection === "open") {
       console.log("✅ BOT CONNECTED")
       startGempaMonitor(sock)
+      startPaymentChecker(sock)
     }
 
     if (connection === "close") {
