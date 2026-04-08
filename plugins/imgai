@@ -2,7 +2,7 @@ import axios from "axios"
 
 export default {
   name: "imageai",
-  command: ["imgai", "imageai2"],
+  command: ["imgaifree "imageai2"],
   category: "ai",
   async execute({ sock, m, text }) {
     if (!text) return m.reply("Masukkan prompt!")
